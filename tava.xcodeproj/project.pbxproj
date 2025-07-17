@@ -1,0 +1,690 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		FE8EB0952E29880E008D19FA /* Auth in Frameworks */ = {isa = PBXBuildFile; productRef = FE8EB0942E29880E008D19FA /* Auth */; };
+		FE8EB0972E29880E008D19FA /* Functions in Frameworks */ = {isa = PBXBuildFile; productRef = FE8EB0962E29880E008D19FA /* Functions */; };
+		FE8EB0992E29880E008D19FA /* PostgREST in Frameworks */ = {isa = PBXBuildFile; productRef = FE8EB0982E29880E008D19FA /* PostgREST */; };
+		FE8EB09B2E29880E008D19FA /* Realtime in Frameworks */ = {isa = PBXBuildFile; productRef = FE8EB09A2E29880E008D19FA /* Realtime */; };
+		FE8EB09D2E29880E008D19FA /* Storage in Frameworks */ = {isa = PBXBuildFile; productRef = FE8EB09C2E29880E008D19FA /* Storage */; };
+		FE8EB09F2E29880E008D19FA /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = FE8EB09E2E29880E008D19FA /* Supabase */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		FE8EB0472E297CFB008D19FA /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = FE8EB0312E297CFA008D19FA /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = FE8EB0382E297CFA008D19FA;
+			remoteInfo = tava;
+		};
+		FE8EB0512E297CFB008D19FA /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = FE8EB0312E297CFA008D19FA /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = FE8EB0382E297CFA008D19FA;
+			remoteInfo = tava;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		FE8EB0392E297CFA008D19FA /* tava.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = tava.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		FE8EB0462E297CFB008D19FA /* tavaTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = tavaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		FE8EB0502E297CFB008D19FA /* tavaUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = tavaUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		FE8EB0A92E29BAC6008D19FA /* Exceptions for "tava" folder in "tava" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = FE8EB0382E297CFA008D19FA /* tava */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		FE8EB03B2E297CFA008D19FA /* tava */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				FE8EB0A92E29BAC6008D19FA /* Exceptions for "tava" folder in "tava" target */,
+			);
+			path = tava;
+			sourceTree = "<group>";
+		};
+		FE8EB0492E297CFB008D19FA /* tavaTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = tavaTests;
+			sourceTree = "<group>";
+		};
+		FE8EB0532E297CFB008D19FA /* tavaUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = tavaUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		FE8EB0362E297CFA008D19FA /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FE8EB0992E29880E008D19FA /* PostgREST in Frameworks */,
+				FE8EB0972E29880E008D19FA /* Functions in Frameworks */,
+				FE8EB09F2E29880E008D19FA /* Supabase in Frameworks */,
+				FE8EB0952E29880E008D19FA /* Auth in Frameworks */,
+				FE8EB09D2E29880E008D19FA /* Storage in Frameworks */,
+				FE8EB09B2E29880E008D19FA /* Realtime in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FE8EB0432E297CFB008D19FA /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FE8EB04D2E297CFB008D19FA /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		FE8EB0302E297CFA008D19FA = {
+			isa = PBXGroup;
+			children = (
+				FE8EB03B2E297CFA008D19FA /* tava */,
+				FE8EB0492E297CFB008D19FA /* tavaTests */,
+				FE8EB0532E297CFB008D19FA /* tavaUITests */,
+				FE8EB03A2E297CFA008D19FA /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		FE8EB03A2E297CFA008D19FA /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				FE8EB0392E297CFA008D19FA /* tava.app */,
+				FE8EB0462E297CFB008D19FA /* tavaTests.xctest */,
+				FE8EB0502E297CFB008D19FA /* tavaUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		FE8EB0382E297CFA008D19FA /* tava */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = FE8EB05A2E297CFB008D19FA /* Build configuration list for PBXNativeTarget "tava" */;
+			buildPhases = (
+				FE8EB0352E297CFA008D19FA /* Sources */,
+				FE8EB0362E297CFA008D19FA /* Frameworks */,
+				FE8EB0372E297CFA008D19FA /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				FE8EB03B2E297CFA008D19FA /* tava */,
+			);
+			name = tava;
+			packageProductDependencies = (
+				FE8EB0942E29880E008D19FA /* Auth */,
+				FE8EB0962E29880E008D19FA /* Functions */,
+				FE8EB0982E29880E008D19FA /* PostgREST */,
+				FE8EB09A2E29880E008D19FA /* Realtime */,
+				FE8EB09C2E29880E008D19FA /* Storage */,
+				FE8EB09E2E29880E008D19FA /* Supabase */,
+			);
+			productName = tava;
+			productReference = FE8EB0392E297CFA008D19FA /* tava.app */;
+			productType = "com.apple.product-type.application";
+		};
+		FE8EB0452E297CFB008D19FA /* tavaTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = FE8EB05D2E297CFB008D19FA /* Build configuration list for PBXNativeTarget "tavaTests" */;
+			buildPhases = (
+				FE8EB0422E297CFB008D19FA /* Sources */,
+				FE8EB0432E297CFB008D19FA /* Frameworks */,
+				FE8EB0442E297CFB008D19FA /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				FE8EB0482E297CFB008D19FA /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				FE8EB0492E297CFB008D19FA /* tavaTests */,
+			);
+			name = tavaTests;
+			packageProductDependencies = (
+			);
+			productName = tavaTests;
+			productReference = FE8EB0462E297CFB008D19FA /* tavaTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		FE8EB04F2E297CFB008D19FA /* tavaUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = FE8EB0602E297CFB008D19FA /* Build configuration list for PBXNativeTarget "tavaUITests" */;
+			buildPhases = (
+				FE8EB04C2E297CFB008D19FA /* Sources */,
+				FE8EB04D2E297CFB008D19FA /* Frameworks */,
+				FE8EB04E2E297CFB008D19FA /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				FE8EB0522E297CFB008D19FA /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				FE8EB0532E297CFB008D19FA /* tavaUITests */,
+			);
+			name = tavaUITests;
+			packageProductDependencies = (
+			);
+			productName = tavaUITests;
+			productReference = FE8EB0502E297CFB008D19FA /* tavaUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		FE8EB0312E297CFA008D19FA /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1640;
+				LastUpgradeCheck = 1640;
+				TargetAttributes = {
+					FE8EB0382E297CFA008D19FA = {
+						CreatedOnToolsVersion = 16.4;
+					};
+					FE8EB0452E297CFB008D19FA = {
+						CreatedOnToolsVersion = 16.4;
+						TestTargetID = FE8EB0382E297CFA008D19FA;
+					};
+					FE8EB04F2E297CFB008D19FA = {
+						CreatedOnToolsVersion = 16.4;
+						TestTargetID = FE8EB0382E297CFA008D19FA;
+					};
+				};
+			};
+			buildConfigurationList = FE8EB0342E297CFA008D19FA /* Build configuration list for PBXProject "tava" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = FE8EB0302E297CFA008D19FA;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				FE8EB0932E29880E008D19FA /* XCRemoteSwiftPackageReference "supabase-swift" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = FE8EB03A2E297CFA008D19FA /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				FE8EB0382E297CFA008D19FA /* tava */,
+				FE8EB0452E297CFB008D19FA /* tavaTests */,
+				FE8EB04F2E297CFB008D19FA /* tavaUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		FE8EB0372E297CFA008D19FA /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FE8EB0442E297CFB008D19FA /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FE8EB04E2E297CFB008D19FA /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		FE8EB0352E297CFA008D19FA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FE8EB0422E297CFB008D19FA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FE8EB04C2E297CFB008D19FA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		FE8EB0482E297CFB008D19FA /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = FE8EB0382E297CFA008D19FA /* tava */;
+			targetProxy = FE8EB0472E297CFB008D19FA /* PBXContainerItemProxy */;
+		};
+		FE8EB0522E297CFB008D19FA /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = FE8EB0382E297CFA008D19FA /* tava */;
+			targetProxy = FE8EB0512E297CFB008D19FA /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		FE8EB0582E297CFB008D19FA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReferenceAnchor = FE8EB03B2E297CFA008D19FA /* tava */;
+			baseConfigurationReferenceRelativePath = Debug.xcconfig;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 8S9CQKY697;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				INFOPLIST_KEY_NSAppleMusicUsageDescription = "";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = Yes;
+				INFOPLIST_KEY_NSLocationAlwaysUsageDescription = Yes;
+				INFOPLIST_KEY_NSLocationTemporaryUsageDescriptionDictionary = "See where you're located";
+				INFOPLIST_KEY_NSLocationUsageDescription = "See where you're located";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "See where you're located";
+				INFOPLIST_KEY_WKExtensionDelegateClassName = "";
+				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				NEW_SETTING = "";
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SUPABASE_URL = "https://olqprtnexykoipqnigag.supabase.co";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		FE8EB0592E297CFB008D19FA /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReferenceAnchor = FE8EB03B2E297CFA008D19FA /* tava */;
+			baseConfigurationReferenceRelativePath = Debug.xcconfig;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 8S9CQKY697;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				INFOPLIST_KEY_NSAppleMusicUsageDescription = "";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = Yes;
+				INFOPLIST_KEY_NSLocationAlwaysUsageDescription = Yes;
+				INFOPLIST_KEY_NSLocationTemporaryUsageDescriptionDictionary = "See where you're located";
+				INFOPLIST_KEY_NSLocationUsageDescription = "See where you're located";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "See where you're located";
+				INFOPLIST_KEY_WKExtensionDelegateClassName = "";
+				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				NEW_SETTING = "";
+				SDKROOT = iphoneos;
+				SUPABASE_URL = "https://olqprtnexykoipqnigag.supabase.co";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		FE8EB05B2E297CFB008D19FA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 8S9CQKY697;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = tava/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.food-and-drink";
+				INFOPLIST_KEY_NSAppleMusicUsageDescription = "";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = Yes;
+				INFOPLIST_KEY_NSLocationAlwaysUsageDescription = Yes;
+				INFOPLIST_KEY_NSLocationTemporaryUsageDescriptionDictionary = "See where you're located";
+				INFOPLIST_KEY_NSLocationUsageDescription = "See where you're located";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "See where you're located";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_WKExtensionDelegateClassName = "";
+				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = NO;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.piscatello.tava;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		FE8EB05C2E297CFB008D19FA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 8S9CQKY697;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = tava/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.food-and-drink";
+				INFOPLIST_KEY_NSAppleMusicUsageDescription = "";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = Yes;
+				INFOPLIST_KEY_NSLocationAlwaysUsageDescription = Yes;
+				INFOPLIST_KEY_NSLocationTemporaryUsageDescriptionDictionary = "See where you're located";
+				INFOPLIST_KEY_NSLocationUsageDescription = "See where you're located";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "See where you're located";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_WKExtensionDelegateClassName = "";
+				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = NO;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.piscatello.tava;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		FE8EB05E2E297CFB008D19FA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 8S9CQKY697;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.piscatello.tavaTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/tava.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/tava";
+			};
+			name = Debug;
+		};
+		FE8EB05F2E297CFB008D19FA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 8S9CQKY697;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.piscatello.tavaTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/tava.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/tava";
+			};
+			name = Release;
+		};
+		FE8EB0612E297CFB008D19FA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 8S9CQKY697;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.piscatello.tavaUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = tava;
+			};
+			name = Debug;
+		};
+		FE8EB0622E297CFB008D19FA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 8S9CQKY697;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.piscatello.tavaUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = tava;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		FE8EB0342E297CFA008D19FA /* Build configuration list for PBXProject "tava" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FE8EB0582E297CFB008D19FA /* Debug */,
+				FE8EB0592E297CFB008D19FA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		FE8EB05A2E297CFB008D19FA /* Build configuration list for PBXNativeTarget "tava" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FE8EB05B2E297CFB008D19FA /* Debug */,
+				FE8EB05C2E297CFB008D19FA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		FE8EB05D2E297CFB008D19FA /* Build configuration list for PBXNativeTarget "tavaTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FE8EB05E2E297CFB008D19FA /* Debug */,
+				FE8EB05F2E297CFB008D19FA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		FE8EB0602E297CFB008D19FA /* Build configuration list for PBXNativeTarget "tavaUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FE8EB0612E297CFB008D19FA /* Debug */,
+				FE8EB0622E297CFB008D19FA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		FE8EB0932E29880E008D19FA /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/supabase/supabase-swift.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.5.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		FE8EB0942E29880E008D19FA /* Auth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FE8EB0932E29880E008D19FA /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Auth;
+		};
+		FE8EB0962E29880E008D19FA /* Functions */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FE8EB0932E29880E008D19FA /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Functions;
+		};
+		FE8EB0982E29880E008D19FA /* PostgREST */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FE8EB0932E29880E008D19FA /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = PostgREST;
+		};
+		FE8EB09A2E29880E008D19FA /* Realtime */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FE8EB0932E29880E008D19FA /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Realtime;
+		};
+		FE8EB09C2E29880E008D19FA /* Storage */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FE8EB0932E29880E008D19FA /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Storage;
+		};
+		FE8EB09E2E29880E008D19FA /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FE8EB0932E29880E008D19FA /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = FE8EB0312E297CFA008D19FA /* Project object */;
+}

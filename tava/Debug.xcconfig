@@ -1,0 +1,6 @@
+// Configuration settings file format documentation can be found at:
+// https://help.apple.com/xcode/#/dev745c5c974
+
+// Supabase Configuration
+SUPABASE_URL = https:/$()/olqprtnexykoipqnigag.supabase.co
+SUPABASE_KEY = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9scXBydG5leHlrb2lwcW5pZ2FnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI3NzkzNDQsImV4cCI6MjA2ODM1NTM0NH0.7gBPCNKpVhr6wYviC5IyqSp14xyrRVz2nqD0VK_2nhI
