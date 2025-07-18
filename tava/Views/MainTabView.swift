@@ -47,9 +47,9 @@ struct CustomTabBar: View {
             
             // Search Tab
             TabBarButton(
-                icon: "magnifyingglass",
-                selectedIcon: "magnifyingglass",
-                title: "Search",
+                icon: "bolt.circle",
+                selectedIcon: "bolt.circle.fill",
+                title: "Explore",
                 isSelected: selectedTab == 1
             ) {
                 selectedTab = 1
@@ -66,20 +66,7 @@ struct CustomTabBar: View {
             }
             .frame(maxWidth: .infinity)
             
-
-            
-            // Profile Tab
-            TabBarButton(
-                icon: "person",
-                selectedIcon: "person.fill",
-                title: "Profile",
-                isSelected: selectedTab == 3
-            ) {
-                selectedTab = 3
-            }
-            .frame(maxWidth: .infinity)
-
-                        // Plus Tab (Floating)
+            // Plus Tab (Floating)
             Button(action: {
                 showAddMeal = true
             }) {
