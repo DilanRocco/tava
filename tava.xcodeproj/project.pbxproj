@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		FE6082652E29D8CF00D5D543 /* MapboxMaps in Frameworks */ = {isa = PBXBuildFile; productRef = FE6082642E29D8CF00D5D543 /* MapboxMaps */; };
 		FE8EB0952E29880E008D19FA /* Auth in Frameworks */ = {isa = PBXBuildFile; productRef = FE8EB0942E29880E008D19FA /* Auth */; };
 		FE8EB0972E29880E008D19FA /* Functions in Frameworks */ = {isa = PBXBuildFile; productRef = FE8EB0962E29880E008D19FA /* Functions */; };
 		FE8EB0992E29880E008D19FA /* PostgREST in Frameworks */ = {isa = PBXBuildFile; productRef = FE8EB0982E29880E008D19FA /* PostgREST */; };
@@ -79,6 +80,7 @@
 				FE8EB09F2E29880E008D19FA /* Supabase in Frameworks */,
 				FE8EB0952E29880E008D19FA /* Auth in Frameworks */,
 				FE8EB09D2E29880E008D19FA /* Storage in Frameworks */,
+				FE6082652E29D8CF00D5D543 /* MapboxMaps in Frameworks */,
 				FE8EB09B2E29880E008D19FA /* Realtime in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -146,6 +148,7 @@
 				FE8EB09A2E29880E008D19FA /* Realtime */,
 				FE8EB09C2E29880E008D19FA /* Storage */,
 				FE8EB09E2E29880E008D19FA /* Supabase */,
+				FE6082642E29D8CF00D5D543 /* MapboxMaps */,
 			);
 			productName = tava;
 			productReference = FE8EB0392E297CFA008D19FA /* tava.app */;
@@ -231,6 +234,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				FE8EB0932E29880E008D19FA /* XCRemoteSwiftPackageReference "supabase-swift" */,
+				FE6082632E29D8CF00D5D543 /* XCRemoteSwiftPackageReference "mapbox-maps-ios" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = FE8EB03A2E297CFA008D19FA /* Products */;
@@ -643,6 +647,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		FE6082632E29D8CF00D5D543 /* XCRemoteSwiftPackageReference "mapbox-maps-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/mapbox/mapbox-maps-ios.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 10.15.0;
+			};
+		};
 		FE8EB0932E29880E008D19FA /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/supabase/supabase-swift.git";
@@ -654,6 +666,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		FE6082642E29D8CF00D5D543 /* MapboxMaps */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FE6082632E29D8CF00D5D543 /* XCRemoteSwiftPackageReference "mapbox-maps-ios" */;
+			productName = MapboxMaps;
+		};
 		FE8EB0942E29880E008D19FA /* Auth */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = FE8EB0932E29880E008D19FA /* XCRemoteSwiftPackageReference "supabase-swift" */;

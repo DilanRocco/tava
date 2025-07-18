@@ -12,6 +12,8 @@ struct tavaApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environmentObject(LocationService())
+                .environmentObject(MealService())
         }
     }
 }

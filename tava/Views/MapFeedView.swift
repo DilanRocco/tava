@@ -1,5 +1,7 @@
 import SwiftUI
-import MapKit
+import MapboxMaps
+import CoreLocation
+import Combine
 
 struct MapFeedView: View {
     @EnvironmentObject var locationService: LocationService
@@ -7,168 +9,703 @@ struct MapFeedView: View {
     @State private var showFeed = false
     @State private var selectedMeal: MealWithDetails?
     @State private var showFilters = false
-    @State private var mapRegion = MKCoordinateRegion(
-        center: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194), // Default to SF
-        span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
-    )
-    @State private var hasInitialized = false
     
     var body: some View {
         NavigationView {
             ZStack {
-                // Map View - completely independent
-                Map(coordinateRegion: $mapRegion, 
-                    showsUserLocation: true,
-                    annotationItems: mealService.nearbyMeals) { meal in
-                    MapAnnotation(coordinate: CLLocationCoordinate2D(
-                        latitude: meal.meal.location?.latitude ?? 0,
-                        longitude: meal.meal.location?.longitude ?? 0
-                    )) {
-                        MealMapPin(meal: meal) {
-                            selectedMeal = meal
-                        }
-                    }
-                }
+                // Citizen-Style Mapbox Map
+                CitizenStyleMapView(
+                    meals: mealService.nearbyMeals,
+                    userLocation: locationService.location
+                )
                 .ignoresSafeArea()
                 
-                // Recenter button - always show it
-                VStack {
-                    HStack {
-                        Spacer()
-                        
-                        Button(action: {
-                            if let location = locationService.location {
-                                withAnimation {
-                                    mapRegion = MKCoordinateRegion(
-                                        center: location.coordinate,
-                                        span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
-                                    )
-                                }
-                            }
-                        }) {
-                            Image(systemName: "location.fill")
-                                .foregroundColor(.white)
-                                .padding(12)
-                                .background(Color.orange)
-                                .clipShape(Circle())
-                                .shadow(color: .black.opacity(0.3), radius: 3, x: 0, y: 2)
-                        }
-                        .padding(.trailing, 20)
-                        .padding(.top, 20)
-                    }
-                    
-                    Spacer()
-                }
-            }
-            .navigationTitle("Discover")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: {
-                        showFeed = true
-                    }) {
-                        Image(systemName: "list.bullet")
-                            .foregroundColor(.primary)
-                    }
-                }
-                
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: {
-                        showFilters = true
-                    }) {
-                        Image(systemName: "line.3.horizontal.decrease.circle")
-                            .foregroundColor(.primary)
-                    }
-                }
-            }
-        }
-        .sheet(item: $selectedMeal) { meal in
-            MealDetailView(meal: meal)
-        }
-        .sheet(isPresented: $showFeed) {
-            FeedView()
-        }
-        .sheet(isPresented: $showFilters) {
-            FilterView()
-        }
-        .onAppear {
-            // Only set initial location once
-            if !hasInitialized, let location = locationService.location {
-                mapRegion = MKCoordinateRegion(
-                    center: location.coordinate,
-                    span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
+                // Modern UI Overlay
+                ModernMapOverlay(
+                    mealCount: mealService.nearbyMeals.count,
+                    showFeed: $showFeed
                 )
-                hasInitialized = true
             }
-        }
-        .task {
-            if let location = locationService.location {
-                await mealService.fetchNearbyMeals(location: location)
+            .navigationBarHidden(true)
+            .sheet(isPresented: $showFeed) {
+                Text("Feed View")
+            }
+            .sheet(item: $selectedMeal) { meal in
+                Text("Meal Detail")
+            }
+            .task {
+                await locationService.requestLocationPermission()
             }
         }
     }
 }
 
-struct MealMapPin: View {
-    let meal: MealWithDetails
-    let action: () -> Void
+// MARK: - Modern Map Overlay
+struct ModernMapOverlay: View {
+    let mealCount: Int
+    @Binding var showFeed: Bool
     
     var body: some View {
-        Button(action: action) {
-            ZStack {
-                Circle()
-                    .fill(Color.orange)
-                    .frame(width: 40, height: 40)
+        VStack {
+            // Top modern recenter button
+            HStack {
+                Spacer()
+                RecenterButton()
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 10)
+            
+            Spacer()
+            
+            // Stunning bottom info panel
+            if mealCount > 0 {
+                ModernBottomPanel(
+                    mealCount: mealCount,
+                    showFeed: $showFeed
+                )
+            }
+        }
+    }
+}
+
+// MARK: - Recenter Button
+struct RecenterButton: View {
+    var body: some View {
+        Button(action: {
+            // Recenter functionality can be added later
+        }) {
+            Image(systemName: "location.fill")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundColor(.white)
+                .frame(width: 50, height: 50)
+        }
+        .buttonStyle(ModernGlowButtonStyle())
+    }
+}
+
+// MARK: - Modern Bottom Panel
+struct ModernBottomPanel: View {
+    let mealCount: Int
+    @Binding var showFeed: Bool
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Modern handle bar with glow
+            HandleBar()
+            
+            // Enhanced content with modern styling
+            BottomPanelContent(
+                mealCount: mealCount,
+                showFeed: $showFeed
+            )
+        }
+        .background(ModernGlassBackground())
+        .clipShape(
+            .rect(
+                topLeadingRadius: 24,
+                topTrailingRadius: 24
+            )
+        )
+        .shadow(color: .black.opacity(0.2), radius: 20, x: 0, y: -8)
+    }
+}
+
+// MARK: - Handle Bar
+struct HandleBar: View {
+    var body: some View {
+        Capsule()
+            .fill(
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(0.6),
+                        Color.white.opacity(0.3)
+                    ],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
+            .frame(width: 40, height: 5)
+            .shadow(color: .white.opacity(0.3), radius: 4, x: 0, y: 2)
+            .padding(.top, 14)
+    }
+}
+
+// MARK: - Bottom Panel Content
+struct BottomPanelContent: View {
+    let mealCount: Int
+    @Binding var showFeed: Bool
+    
+    var body: some View {
+        HStack(spacing: 20) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 12) {
+                    // Animated count with glow
+                    Text("\(mealCount)")
+                        .font(.system(size: 32, weight: .black, design: .rounded))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [
+                                    Color.white,
+                                    Color.white.opacity(0.9)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .shadow(color: .white.opacity(0.3), radius: 8, x: 0, y: 4)
+                    
+                    // Modern pulse indicator
+                    PulseIndicator()
+                }
                 
-                if let photo = meal.primaryPhoto {
-                    AsyncImage(url: URL(string: photo.url)) { image in
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                    } placeholder: {
-                        Image(systemName: "fork.knife")
-                            .foregroundColor(.white)
-                    }
-                    .frame(width: 32, height: 32)
-                    .clipShape(Circle())
-                } else {
-                    Image(systemName: "fork.knife")
-                        .foregroundColor(.white)
-                        .font(.system(size: 16, weight: .medium))
-                }
+                Text("meals nearby")
+                    .font(.system(size: 16, weight: .medium, design: .rounded))
+                    .foregroundColor(.white.opacity(0.85))
+                    .tracking(0.5)
             }
-            .shadow(color: .black.opacity(0.3), radius: 3, x: 0, y: 2)
+            
+            Spacer()
+            
+            // Enhanced explore button
+            ExploreButton(showFeed: $showFeed, mealCount: mealCount)
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 20)
+        .padding(.bottom, 24)
+    }
+}
+
+// MARK: - Pulse Indicator
+struct PulseIndicator: View {
+    var body: some View {
+        Circle()
+            .fill(Color.orange)
+            .frame(width: 8, height: 8)
+            .shadow(color: .orange.opacity(0.6), radius: 4, x: 0, y: 2)
+    }
+}
+
+// MARK: - Explore Button
+struct ExploreButton: View {
+    @Binding var showFeed: Bool
+    let mealCount: Int
+    
+    var body: some View {
+        Button("Explore") {
+            showFeed = true
+        }
+        .font(.system(size: 16, weight: .bold, design: .rounded))
+        .foregroundColor(.black)
+        .frame(width: 90, height: 42)
+        .background(
+            ZStack {
+                // Glow effect
+                Capsule()
+                    .fill(Color.white.opacity(0.9))
+                    .shadow(color: .white.opacity(0.4), radius: 8, x: 0, y: 4)
+                
+                // Main button
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white,
+                                Color.white.opacity(0.95)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
+        )
+        .scaleEffect(1.0)
+    }
+}
+
+// MARK: - Button Styles
+struct ModernGlowButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                ZStack {
+                    // Outer glow
+                    Circle()
+                        .fill(
+                            RadialGradient(
+                                colors: [
+                                    Color.orange.opacity(0.8),
+                                    Color.orange.opacity(0.4),
+                                    Color.orange.opacity(0.1)
+                                ],
+                                center: .center,
+                                startRadius: 15,
+                                endRadius: 30
+                            )
+                        )
+                    
+                    // Main button
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.orange,
+                                    Color.orange.opacity(0.8)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 50, height: 50)
+                }
+            )
+            .shadow(
+                color: .orange.opacity(0.4),
+                radius: 15,
+                x: 0,
+                y: 8
+            )
+            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
+    }
+}
+
+// MARK: - Glass Background
+struct ModernGlassBackground: View {
+    var body: some View {
+        ZStack {
+            // Dark glass effect
+            Rectangle()
+                .fill(Material.ultraThinMaterial)
+                .opacity(0.85)
+            
+            // Subtle gradient overlay
+            LinearGradient(
+                colors: [
+                    Color.black.opacity(0.3),
+                    Color.black.opacity(0.1)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
         }
     }
 }
 
-struct FeedView: View {
-    @EnvironmentObject var mealService: MealService
-    @Environment(\.dismiss) private var dismiss
+// MARK: - Citizen-Style Map Implementation
+struct CitizenStyleMapView: UIViewRepresentable {
+    let meals: [MealWithDetails]
+    let userLocation: CLLocation?
     
-    var body: some View {
-        NavigationView {
-            ScrollView {
-                LazyVStack(spacing: 16) {
-                    ForEach(mealService.meals) { meal in
-                        MealCardView(meal: meal)
-                            .padding(.horizontal, 20)
-                    }
-                }
-                .padding(.top, 16)
-            }
-            .navigationTitle("Feed")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                }
-            }
+    func makeUIView(context: Context) -> MapView {
+        // Get and verify API key
+        guard let apiKey = Bundle.main.object(forInfoDictionaryKey: "MAPBOX_API_KEY") as? String else {
+            print("❌ MAPBOX_API_KEY not found in Info.plist")
+            return MapView(frame: .zero)
         }
-        .task {
-            await mealService.fetchUserFeed()
+        
+        print("✅ Mapbox API Key found: \(String(apiKey.prefix(10)))...")
+        
+        // Use user location or default to San Francisco
+        let defaultLocation = CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194)
+        let initialLocation = userLocation?.coordinate ?? defaultLocation
+        
+        print("📍 Using location: \(initialLocation.latitude), \(initialLocation.longitude)")
+        
+        // Create camera options
+        let cameraOptions = CameraOptions(
+            center: initialLocation,
+            zoom: 15.0
+        )
+        
+        // Create map with resource options including access token
+        let resourceOptions = ResourceOptions(accessToken: apiKey)
+        let mapInitOptions = MapInitOptions(
+            resourceOptions: resourceOptions,
+            cameraOptions: cameraOptions
+        )
+        
+        let mapView = MapView(frame: .zero, mapInitOptions: mapInitOptions)
+        
+        print("🗺️ MapView created with Citizen-style configuration")
+        
+        // Hide all ornaments for ultra-clean look like Citizen
+        mapView.ornaments.options.scaleBar.visibility = .hidden
+        mapView.ornaments.options.compass.visibility = .hidden
+        mapView.ornaments.options.attributionButton.margins = CGPoint(x: 8, y: 8)
+        
+        // Load custom Citizen-style JSON
+        Task {
+            await loadCitizenStyleJSON(to: mapView)
+        }
+        
+        // Enable all gestures for smooth interaction
+        mapView.gestures.options.rotateEnabled = true
+        mapView.gestures.options.pinchEnabled = true
+        mapView.gestures.options.pitchEnabled = true
+        mapView.gestures.options.panEnabled = true
+        mapView.gestures.options.doubleTouchToZoomOutEnabled = true
+        mapView.gestures.options.doubleTapToZoomInEnabled = true
+        
+        print("🎮 All gestures enabled for smooth interaction")
+        
+        return mapView
+    }
+    
+    // MARK: - Load Custom Citizen Style JSON (Async)
+    private func loadCitizenStyleJSON(to mapView: MapView) async {
+        // Your custom Citizen style JSON
+        let citizenStyleJSON = """
+        {
+         "version": 8,
+        "name": "Citizen Style",
+        "metadata": {
+        "mapbox:autocomposite": true,
+        "mapbox:type": "template",
+        "mapbox:groups": {
+        "1444849382550.77": {"name": "Background", "collapsed": false},
+        "1444849388993.8999": {"name": "Water", "collapsed": false},
+        "1444849242106.713": {"name": "Land", "collapsed": false},
+        "1444849334699.1902": {"name": "Roads", "collapsed": false},
+        "1444849345966.4436": {"name": "Buildings", "collapsed": false},
+        "1444849364238.8171": {"name": "Labels", "collapsed": false}
+         }
+         },
+        "sources": {
+        "mapbox": {
+        "url": "mapbox://mapbox.mapbox-streets-v8",
+        "type": "vector"
+         }
+         },
+        "sprite": "mapbox://sprites/mapbox/dark-v10",
+        "glyphs": "mapbox://fonts/mapbox/{fontstack}/{range}.pbf",
+        "layers": [
+         {
+        "id": "background",
+        "type": "background",
+        "paint": {
+        "background-color": "#0a0a0a"
+         }
+         },
+         {
+        "id": "water",
+        "type": "fill",
+        "source": "mapbox",
+        "source-layer": "water",
+        "paint": {
+        "fill-color": "#0d1421",
+        "fill-opacity": 1
+         }
+         },
+         {
+        "id": "land",
+        "type": "background",
+        "paint": {
+        "background-color": "#0f0f0f"
+         }
+         },
+         {
+        "id": "road-street-low",
+        "type": "line",
+        "source": "mapbox",
+        "source-layer": "road",
+        "filter": ["==", ["get", "class"], "street"],
+        "paint": {
+        "line-color": "#ffffff",
+        "line-opacity": 0.8,
+        "line-width": ["interpolate", ["linear"], ["zoom"], 10, 0.5, 18, 4]
+         }
+         },
+         {
+        "id": "road-primary",
+        "type": "line",
+        "source": "mapbox",
+        "source-layer": "road",
+        "filter": ["==", ["get", "class"], "primary"],
+        "paint": {
+        "line-color": "#ffffff",
+        "line-opacity": 0.9,
+        "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1, 18, 8]
+         }
+         },
+         {
+        "id": "road-secondary",
+        "type": "line",
+        "source": "mapbox",
+        "source-layer": "road",
+        "filter": ["==", ["get", "class"], "secondary"],
+        "paint": {
+        "line-color": "#ffffff",
+        "line-opacity": 0.85,
+        "line-width": ["interpolate", ["linear"], ["zoom"], 10, 0.8, 18, 6]
+         }
+         },
+         {
+        "id": "building",
+        "type": "fill",
+        "source": "mapbox",
+        "source-layer": "building",
+        "paint": {
+        "fill-color": "#1a1a1a",
+        "fill-opacity": 0.8,
+        "fill-outline-color": "#333333"
+         }
+         },
+         {
+        "id": "road-label",
+        "type": "symbol",
+        "source": "mapbox",
+        "source-layer": "road",
+        "filter": ["has", "name"],
+        "layout": {
+        "text-field": ["get", "name"],
+        "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
+        "text-size": ["interpolate", ["linear"], ["zoom"], 10, 11, 18, 16],
+        "symbol-placement": "line"
+         },
+        "paint": {
+        "text-color": "#ffffff",
+        "text-halo-color": "#000000",
+        "text-halo-width": 1.5,
+        "text-opacity": 0.9
+         }
+         },
+         {
+        "id": "place-label",
+        "type": "symbol",
+        "source": "mapbox",
+        "source-layer": "place_label",
+        "layout": {
+        "text-field": ["get", "name"],
+        "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
+        "text-size": ["interpolate", ["linear"], ["zoom"], 10, 12, 18, 18],
+        "text-anchor": "center"
+         },
+        "paint": {
+        "text-color": "#ffffff",
+        "text-halo-color": "#000000",
+        "text-halo-width": 2,
+        "text-opacity": 0.95
+         }
+         }
+         ]
+        }
+        """
+        
+        mapView.mapboxMap.loadStyleJSON(citizenStyleJSON) { result in
+            switch result {
+            case .success(let style):
+                print("✅ Citizen style loaded: \(style)")
+                // Set camera...
+            case .failure(let error):
+                print("❌ Failed: \(error)")
+                mapView.mapboxMap.style.uri = StyleURI.dark
+            }
         }
     }
-} 
+    
+    func updateUIView(_ mapView: MapView, context: Context) {
+        // Enable beautiful location puck
+        if userLocation != nil {
+            mapView.location.options.puckType = .puck2D()
+            print("📍 Location puck enabled")
+        }
+        
+        // Smoothly update camera to user location when available
+        if let location = userLocation {
+            let cameraOptions = CameraOptions(
+                center: location.coordinate,
+                zoom: 16.0,
+                bearing: 0,
+                pitch: 0
+            )
+            
+            // Smooth animation to user location
+            mapView.mapboxMap.setCamera(to: cameraOptions)
+            print("📷 Camera smoothly updated to user location")
+        }
+    }
+}
+
+// MARK: - Alternative: Load from Bundle File (Async)
+extension CitizenStyleMapView {
+    private func loadCitizenStyleFromBundle(to mapView: MapView) async {
+        do {
+            guard let path = Bundle.main.path(forResource: "CitizenMapStyle", ofType: "json") else {
+                print("❌ CitizenMapStyle.json not found in bundle")
+                mapView.mapboxMap.style.uri = StyleURI.dark
+                return
+            }
+            
+            let jsonData = try Data(contentsOf: URL(fileURLWithPath: path))
+            let jsonString = String(data: jsonData, encoding: .utf8)
+            
+            guard let styleJSON = jsonString else {
+                print("❌ Could not convert JSON data to string")
+                mapView.mapboxMap.style.uri = StyleURI.dark
+                return
+            }
+            
+            let citizenStyleJSON = """
+            {
+             "version": 8,
+            "name": "Citizen Style",
+            "metadata": {
+            "mapbox:autocomposite": true,
+            "mapbox:type": "template",
+            "mapbox:groups": {
+            "1444849382550.77": {"name": "Background", "collapsed": false},
+            "1444849388993.8999": {"name": "Water", "collapsed": false},
+            "1444849242106.713": {"name": "Land", "collapsed": false},
+            "1444849334699.1902": {"name": "Roads", "collapsed": false},
+            "1444849345966.4436": {"name": "Buildings", "collapsed": false},
+            "1444849364238.8171": {"name": "Labels", "collapsed": false}
+             }
+             },
+            "sources": {
+            "mapbox": {
+            "url": "mapbox://mapbox.mapbox-streets-v8",
+            "type": "vector"
+             }
+             },
+            "sprite": "mapbox://sprites/mapbox/dark-v10",
+            "glyphs": "mapbox://fonts/mapbox/{fontstack}/{range}.pbf",
+            "layers": [
+             {
+            "id": "background",
+            "type": "background",
+            "paint": {
+            "background-color": "#0a0a0a"
+             }
+             },
+             {
+            "id": "water",
+            "type": "fill",
+            "source": "mapbox",
+            "source-layer": "water",
+            "paint": {
+            "fill-color": "#0d1421",
+            "fill-opacity": 1
+             }
+             },
+             {
+            "id": "land",
+            "type": "background",
+            "paint": {
+            "background-color": "#0f0f0f"
+             }
+             },
+             {
+            "id": "road-street-low",
+            "type": "line",
+            "source": "mapbox",
+            "source-layer": "road",
+            "filter": ["==", ["get", "class"], "street"],
+            "paint": {
+            "line-color": "#ffffff",
+            "line-opacity": 0.8,
+            "line-width": ["interpolate", ["linear"], ["zoom"], 10, 0.5, 18, 4]
+             }
+             },
+             {
+            "id": "road-primary",
+            "type": "line",
+            "source": "mapbox",
+            "source-layer": "road",
+            "filter": ["==", ["get", "class"], "primary"],
+            "paint": {
+            "line-color": "#ffffff",
+            "line-opacity": 0.9,
+            "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1, 18, 8]
+             }
+             },
+             {
+            "id": "road-secondary",
+            "type": "line",
+            "source": "mapbox",
+            "source-layer": "road",
+            "filter": ["==", ["get", "class"], "secondary"],
+            "paint": {
+            "line-color": "#ffffff",
+            "line-opacity": 0.85,
+            "line-width": ["interpolate", ["linear"], ["zoom"], 10, 0.8, 18, 6]
+             }
+             },
+             {
+            "id": "building",
+            "type": "fill",
+            "source": "mapbox",
+            "source-layer": "building",
+            "paint": {
+            "fill-color": "#1a1a1a",
+            "fill-opacity": 0.8,
+            "fill-outline-color": "#333333"
+             }
+             },
+             {
+            "id": "road-label",
+            "type": "symbol",
+            "source": "mapbox",
+            "source-layer": "road",
+            "filter": ["has", "name"],
+            "layout": {
+            "text-field": ["get", "name"],
+            "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
+            "text-size": ["interpolate", ["linear"], ["zoom"], 10, 11, 18, 16],
+            "symbol-placement": "line"
+             },
+            "paint": {
+            "text-color": "#ffffff",
+            "text-halo-color": "#000000",
+            "text-halo-width": 1.5,
+            "text-opacity": 0.9
+             }
+             },
+             {
+            "id": "place-label",
+            "type": "symbol",
+            "source": "mapbox",
+            "source-layer": "place_label",
+            "layout": {
+            "text-field": ["get", "name"],
+            "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
+            "text-size": ["interpolate", ["linear"], ["zoom"], 10, 12, 18, 18],
+            "text-anchor": "center"
+             },
+            "paint": {
+            "text-color": "#ffffff",
+            "text-halo-color": "#000000",
+            "text-halo-width": 2,
+            "text-opacity": 0.95
+             }
+             }
+             ]
+            }
+            """
+            
+            mapView.mapboxMap.loadStyleJSON(citizenStyleJSON) { result in
+                switch result {
+                case .success(let style):
+                    print("✅ Citizen style loaded: \(style)")
+                    // Set camera...
+                case .failure(let error):
+                    print("❌ Failed: \(error)")
+                    mapView.mapboxMap.style.uri = StyleURI.dark
+                }
+            }
+        } catch {
+            print("❌ Error loading style from bundle: \(error)")
+            mapView.mapboxMap.style.uri = StyleURI.dark
+        }
+    }
+}
+
+// MARK: - Async Location Service Extension
+extension LocationService {
+    func requestLocationPermission() async {
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.main.async {
+                // Your existing location permission request code
+                continuation.resume()
+            }
+        }
+    }
+}
