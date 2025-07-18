@@ -6,32 +6,66 @@ import Combine
 struct MapFeedView: View {
     @EnvironmentObject var locationService: LocationService
     @EnvironmentObject var mealService: MealService
+    @EnvironmentObject var supabase: SupabaseClient
+    @EnvironmentObject var googlePlacesService: GooglePlacesService
+    
     @State private var showFeed = false
     @State private var selectedMeal: MealWithDetails?
     @State private var showFilters = false
+    @State private var showProfile = false
+    @State private var friendsFilter: FriendsFilterOption = .all
+    
+    enum FriendsFilterOption: String, CaseIterable {
+        case all = "All"
+        case friends = "Friends"
+        case nonFriends = "Discover"
+    }
+    
+    var filteredMeals: [MealWithDetails] {
+        switch friendsFilter {
+        case .all:
+            return mealService.nearbyMeals
+        case .friends:
+            return mealService.nearbyMeals.filter { $0.user.id != supabase.currentUser?.id }
+        case .nonFriends:
+            return mealService.nearbyMeals.filter { $0.user.id == supabase.currentUser?.id }
+        }
+    }
     
     var body: some View {
         NavigationView {
             ZStack {
                 // Citizen-Style Mapbox Map
                 CitizenStyleMapView(
-                    meals: mealService.nearbyMeals,
+                    meals: filteredMeals,
                     userLocation: locationService.location
                 )
                 .ignoresSafeArea()
                 
-                // Modern UI Overlay
+                // Modern UI Overlay with Profile and Filter
                 ModernMapOverlay(
-                    mealCount: mealService.nearbyMeals.count,
-                    showFeed: $showFeed
+                    mealCount: filteredMeals.count,
+                    showFeed: $showFeed,
+                    showProfile: $showProfile,
+                    showFilters: $showFilters,
+                    friendsFilter: $friendsFilter
                 )
             }
             .navigationBarHidden(true)
             .sheet(isPresented: $showFeed) {
-                Text("Feed View")
+                MapFeedListView(meals: filteredMeals)
             }
             .sheet(item: $selectedMeal) { meal in
-                Text("Meal Detail")
+                MealDetailView(meal: meal)
+                    .environmentObject(mealService)
+                    .environmentObject(supabase)
+            }
+            .sheet(isPresented: $showProfile) {
+                ProfileView()
+                    .environmentObject(supabase)
+                    .environmentObject(locationService)
+                    .environmentObject(mealService)
+                    .environmentObject(googlePlacesService)
             }
             .task {
                 await locationService.requestLocationPermission()
@@ -44,16 +78,64 @@ struct MapFeedView: View {
 struct ModernMapOverlay: View {
     let mealCount: Int
     @Binding var showFeed: Bool
+    @Binding var showProfile: Bool
+    @Binding var showFilters: Bool
+    @Binding var friendsFilter: MapFeedView.FriendsFilterOption
     
     var body: some View {
         VStack {
-            // Top modern recenter button
+            // Top bar with profile and controls
             HStack {
+                // Profile button (top left)
+                Button(action: {
+                    showProfile = true
+                }) {
+                    Circle()
+                        .fill(Color.gray.opacity(0.3))
+                        .frame(width: 44, height: 44)
+                        .overlay(
+                            Image(systemName: "person.fill")
+                                .font(.system(size: 18, weight: .medium))
+                                .foregroundColor(.white)
+                        )
+                        .background(
+                            Circle()
+                                .fill(.ultraThinMaterial)
+                                .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
+                        )
+                }
+                
                 Spacer()
+                
+                // Filter button
+                Button(action: {
+                    showFilters.toggle()
+                }) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                            .font(.system(size: 16, weight: .medium))
+                        Text(friendsFilter.rawValue)
+                            .font(.system(size: 14, weight: .medium))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(.ultraThinMaterial)
+                    .clipShape(Capsule())
+                    .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
+                }
+                
+                // Recenter button
                 RecenterButton()
             }
             .padding(.horizontal, 20)
             .padding(.top, 10)
+            
+            // Friends Filter Overlay
+            if showFilters {
+                friendsFilterView
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
             
             Spacer()
             
@@ -61,8 +143,139 @@ struct ModernMapOverlay: View {
             if mealCount > 0 {
                 ModernBottomPanel(
                     mealCount: mealCount,
-                    showFeed: $showFeed
+                    showFeed: $showFeed,
+                    filterText: friendsFilter.rawValue
                 )
+            }
+        }
+        .animation(.easeInOut(duration: 0.3), value: showFilters)
+    }
+    
+    private var friendsFilterView: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Text("Filter Meals")
+                    .font(.headline)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+                
+                Spacer()
+                
+                Button(action: {
+                    showFilters = false
+                }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.white.opacity(0.7))
+                }
+            }
+            
+            HStack(spacing: 12) {
+                ForEach(MapFeedView.FriendsFilterOption.allCases, id: \.self) { option in
+                    FilterOptionButton(
+                        title: option.rawValue,
+                        isSelected: friendsFilter == option,
+                        icon: option.iconName
+                    ) {
+                        friendsFilter = option
+                        showFilters = false
+                    }
+                }
+            }
+        }
+        .padding(20)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .shadow(color: .black.opacity(0.2), radius: 12, x: 0, y: 8)
+        .padding(.horizontal, 20)
+    }
+}
+
+// MARK: - Filter Option Button
+struct FilterOptionButton: View {
+    let title: String
+    let isSelected: Bool
+    let icon: String
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 24, weight: .medium))
+                    .foregroundColor(isSelected ? .orange : .white.opacity(0.7))
+                
+                Text(title)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(isSelected ? .orange : .white.opacity(0.7))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            .background(
+                isSelected ? Color.orange.opacity(0.2) : Color.clear
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(
+                        isSelected ? Color.orange : Color.white.opacity(0.3),
+                        lineWidth: 1
+                    )
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+    }
+}
+
+// MARK: - Extensions
+extension MapFeedView.FriendsFilterOption {
+    var iconName: String {
+        switch self {
+        case .all:
+            return "globe"
+        case .friends:
+            return "person.2.fill"
+        case .nonFriends:
+            return "eye.fill"
+        }
+    }
+}
+
+// MARK: - Map Feed List View
+struct MapFeedListView: View {
+    let meals: [MealWithDetails]
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationView {
+            List {
+                ForEach(meals, id: \.id) { meal in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(meal.meal.displayTitle)
+                            .font(.headline)
+                            .fontWeight(.bold)
+                        
+                        Text(meal.meal.description ?? "No description")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                        
+                        if let restaurant = meal.restaurant {
+                            Text(restaurant.name)
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+            .navigationTitle("Nearby Meals")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
             }
         }
     }
@@ -87,6 +300,7 @@ struct RecenterButton: View {
 struct ModernBottomPanel: View {
     let mealCount: Int
     @Binding var showFeed: Bool
+    let filterText: String
     
     var body: some View {
         VStack(spacing: 0) {
@@ -96,7 +310,8 @@ struct ModernBottomPanel: View {
             // Enhanced content with modern styling
             BottomPanelContent(
                 mealCount: mealCount,
-                showFeed: $showFeed
+                showFeed: $showFeed,
+                filterText: filterText
             )
         }
         .background(ModernGlassBackground())
@@ -134,6 +349,7 @@ struct HandleBar: View {
 struct BottomPanelContent: View {
     let mealCount: Int
     @Binding var showFeed: Bool
+    let filterText: String
     
     var body: some View {
         HStack(spacing: 20) {
