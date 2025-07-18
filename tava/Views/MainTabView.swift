@@ -8,11 +8,11 @@ struct MainTabView: View {
         ZStack(alignment: .bottom) {
             // Main content based on selected tab
             TabView(selection: $selectedTab) {
-                MapFeedView()
+                FeedView()
                     .tag(0)
-                SearchView()
+                DiscoveryView()
                     .tag(1)
-                ProfileView()
+                MapFeedView()
                     .tag(2)
                 
             }
@@ -38,7 +38,7 @@ struct CustomTabBar: View {
             TabBarButton(
                 icon: "house",
                 selectedIcon: "house.fill",
-                title: "Home",
+                title: "Discover",
                 isSelected: selectedTab == 0
             ) {
                 selectedTab = 0
@@ -55,6 +55,16 @@ struct CustomTabBar: View {
                 selectedTab = 1
             }
             .frame(maxWidth: .infinity)
+
+            TabBarButton(
+                icon: "magnifyingglass",
+                selectedIcon: "magnifyingglass",
+                title: "Search",
+                isSelected: selectedTab == 2
+            ) {
+                selectedTab = 2
+            }
+            .frame(maxWidth: .infinity)
             
 
             
@@ -63,9 +73,9 @@ struct CustomTabBar: View {
                 icon: "person",
                 selectedIcon: "person.fill",
                 title: "Profile",
-                isSelected: selectedTab == 2
+                isSelected: selectedTab == 3
             ) {
-                selectedTab = 2
+                selectedTab = 3
             }
             .frame(maxWidth: .infinity)
 
