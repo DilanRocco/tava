@@ -353,183 +353,8 @@ struct CitizenStyleMapView: UIViewRepresentable {
     // MARK: - Load Custom Citizen Style JSON (Async)
     private func loadCitizenStyleJSON(to mapView: MapView) async {
         // Your custom Citizen style JSON
-        let citizenStyleJSON = """
-        {
-         "version": 8,
-        "name": "Citizen Style",
-        "metadata": {
-        "mapbox:autocomposite": true,
-        "mapbox:type": "template",
-        "mapbox:groups": {
-        "1444849382550.77": {"name": "Background", "collapsed": false},
-        "1444849388993.8999": {"name": "Water", "collapsed": false},
-        "1444849242106.713": {"name": "Land", "collapsed": false},
-        "1444849334699.1902": {"name": "Roads", "collapsed": false},
-        "1444849345966.4436": {"name": "Buildings", "collapsed": false},
-        "1444849364238.8171": {"name": "Labels", "collapsed": false}
-         }
-         },
-        "sources": {
-        "mapbox": {
-        "url": "mapbox://mapbox.mapbox-streets-v8",
-        "type": "vector"
-         }
-         },
-        "sprite": "mapbox://sprites/mapbox/dark-v10",
-        "glyphs": "mapbox://fonts/mapbox/{fontstack}/{range}.pbf",
-        "layers": [
-         {
-        "id": "background",
-        "type": "background",
-        "paint": {
-        "background-color": "#0a0a0a"
-         }
-         },
-         {
-        "id": "water",
-        "type": "fill",
-        "source": "mapbox",
-        "source-layer": "water",
-        "paint": {
-        "fill-color": "#0d1421",
-        "fill-opacity": 1
-         }
-         },
-         {
-        "id": "land",
-        "type": "background",
-        "paint": {
-        "background-color": "#0f0f0f"
-         }
-         },
-         {
-        "id": "road-street-low",
-        "type": "line",
-        "source": "mapbox",
-        "source-layer": "road",
-        "filter": ["==", ["get", "class"], "street"],
-        "paint": {
-        "line-color": "#ffffff",
-        "line-opacity": 0.8,
-        "line-width": ["interpolate", ["linear"], ["zoom"], 10, 0.5, 18, 4]
-         }
-         },
-         {
-        "id": "road-primary",
-        "type": "line",
-        "source": "mapbox",
-        "source-layer": "road",
-        "filter": ["==", ["get", "class"], "primary"],
-        "paint": {
-        "line-color": "#ffffff",
-        "line-opacity": 0.9,
-        "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1, 18, 8]
-         }
-         },
-         {
-        "id": "road-secondary",
-        "type": "line",
-        "source": "mapbox",
-        "source-layer": "road",
-        "filter": ["==", ["get", "class"], "secondary"],
-        "paint": {
-        "line-color": "#ffffff",
-        "line-opacity": 0.85,
-        "line-width": ["interpolate", ["linear"], ["zoom"], 10, 0.8, 18, 6]
-         }
-         },
-         {
-        "id": "building",
-        "type": "fill",
-        "source": "mapbox",
-        "source-layer": "building",
-        "paint": {
-        "fill-color": "#1a1a1a",
-        "fill-opacity": 0.8,
-        "fill-outline-color": "#333333"
-         }
-         },
-         {
-        "id": "road-label",
-        "type": "symbol",
-        "source": "mapbox",
-        "source-layer": "road",
-        "filter": ["has", "name"],
-        "layout": {
-        "text-field": ["get", "name"],
-        "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
-        "text-size": ["interpolate", ["linear"], ["zoom"], 10, 11, 18, 16],
-        "symbol-placement": "line"
-         },
-        "paint": {
-        "text-color": "#ffffff",
-        "text-halo-color": "#000000",
-        "text-halo-width": 1.5,
-        "text-opacity": 0.9
-         }
-         },
-         {
-        "id": "place-label",
-        "type": "symbol",
-        "source": "mapbox",
-        "source-layer": "place_label",
-        "layout": {
-        "text-field": ["get", "name"],
-        "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
-        "text-size": ["interpolate", ["linear"], ["zoom"], 10, 12, 18, 18],
-        "text-anchor": "center"
-         },
-        "paint": {
-        "text-color": "#ffffff",
-        "text-halo-color": "#000000",
-        "text-halo-width": 2,
-        "text-opacity": 0.95
-         }
-         }
-         ]
-        }
-        """
-        
-        mapView.mapboxMap.loadStyleJSON(citizenStyleJSON) { result in
-            switch result {
-            case .success(let style):
-                print("✅ Citizen style loaded: \(style)")
-                // Set camera...
-            case .failure(let error):
-                print("❌ Failed: \(error)")
-                mapView.mapboxMap.style.uri = StyleURI.dark
-            }
-        }
-    }
-    
-    func updateUIView(_ mapView: MapView, context: Context) {
-        // Enable beautiful location puck
-        if userLocation != nil {
-            mapView.location.options.puckType = .puck2D()
-            print("📍 Location puck enabled")
-        }
-        
-        // Smoothly update camera to user location when available
-        if let location = userLocation {
-            let cameraOptions = CameraOptions(
-                center: location.coordinate,
-                zoom: 16.0,
-                bearing: 0,
-                pitch: 0
-            )
-            
-            // Smooth animation to user location
-            mapView.mapboxMap.setCamera(to: cameraOptions)
-            print("📷 Camera smoothly updated to user location")
-        }
-    }
-}
-
-// MARK: - Alternative: Load from Bundle File (Async)
-extension CitizenStyleMapView {
-    private func loadCitizenStyleFromBundle(to mapView: MapView) async {
         do {
-            guard let path = Bundle.main.path(forResource: "CitizenMapStyle", ofType: "json") else {
+        guard let path = Bundle.main.path(forResource: "CitizenMapStyle", ofType: "json") else {
                 print("❌ CitizenMapStyle.json not found in bundle")
                 mapView.mapboxMap.style.uri = StyleURI.dark
                 return
@@ -544,144 +369,8 @@ extension CitizenStyleMapView {
                 return
             }
             
-            let citizenStyleJSON = """
-            {
-             "version": 8,
-            "name": "Citizen Style",
-            "metadata": {
-            "mapbox:autocomposite": true,
-            "mapbox:type": "template",
-            "mapbox:groups": {
-            "1444849382550.77": {"name": "Background", "collapsed": false},
-            "1444849388993.8999": {"name": "Water", "collapsed": false},
-            "1444849242106.713": {"name": "Land", "collapsed": false},
-            "1444849334699.1902": {"name": "Roads", "collapsed": false},
-            "1444849345966.4436": {"name": "Buildings", "collapsed": false},
-            "1444849364238.8171": {"name": "Labels", "collapsed": false}
-             }
-             },
-            "sources": {
-            "mapbox": {
-            "url": "mapbox://mapbox.mapbox-streets-v8",
-            "type": "vector"
-             }
-             },
-            "sprite": "mapbox://sprites/mapbox/dark-v10",
-            "glyphs": "mapbox://fonts/mapbox/{fontstack}/{range}.pbf",
-            "layers": [
-             {
-            "id": "background",
-            "type": "background",
-            "paint": {
-            "background-color": "#0a0a0a"
-             }
-             },
-             {
-            "id": "water",
-            "type": "fill",
-            "source": "mapbox",
-            "source-layer": "water",
-            "paint": {
-            "fill-color": "#0d1421",
-            "fill-opacity": 1
-             }
-             },
-             {
-            "id": "land",
-            "type": "background",
-            "paint": {
-            "background-color": "#0f0f0f"
-             }
-             },
-             {
-            "id": "road-street-low",
-            "type": "line",
-            "source": "mapbox",
-            "source-layer": "road",
-            "filter": ["==", ["get", "class"], "street"],
-            "paint": {
-            "line-color": "#ffffff",
-            "line-opacity": 0.8,
-            "line-width": ["interpolate", ["linear"], ["zoom"], 10, 0.5, 18, 4]
-             }
-             },
-             {
-            "id": "road-primary",
-            "type": "line",
-            "source": "mapbox",
-            "source-layer": "road",
-            "filter": ["==", ["get", "class"], "primary"],
-            "paint": {
-            "line-color": "#ffffff",
-            "line-opacity": 0.9,
-            "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1, 18, 8]
-             }
-             },
-             {
-            "id": "road-secondary",
-            "type": "line",
-            "source": "mapbox",
-            "source-layer": "road",
-            "filter": ["==", ["get", "class"], "secondary"],
-            "paint": {
-            "line-color": "#ffffff",
-            "line-opacity": 0.85,
-            "line-width": ["interpolate", ["linear"], ["zoom"], 10, 0.8, 18, 6]
-             }
-             },
-             {
-            "id": "building",
-            "type": "fill",
-            "source": "mapbox",
-            "source-layer": "building",
-            "paint": {
-            "fill-color": "#1a1a1a",
-            "fill-opacity": 0.8,
-            "fill-outline-color": "#333333"
-             }
-             },
-             {
-            "id": "road-label",
-            "type": "symbol",
-            "source": "mapbox",
-            "source-layer": "road",
-            "filter": ["has", "name"],
-            "layout": {
-            "text-field": ["get", "name"],
-            "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
-            "text-size": ["interpolate", ["linear"], ["zoom"], 10, 11, 18, 16],
-            "symbol-placement": "line"
-             },
-            "paint": {
-            "text-color": "#ffffff",
-            "text-halo-color": "#000000",
-            "text-halo-width": 1.5,
-            "text-opacity": 0.9
-             }
-             },
-             {
-            "id": "place-label",
-            "type": "symbol",
-            "source": "mapbox",
-            "source-layer": "place_label",
-            "layout": {
-            "text-field": ["get", "name"],
-            "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
-            "text-size": ["interpolate", ["linear"], ["zoom"], 10, 12, 18, 18],
-            "text-anchor": "center"
-             },
-            "paint": {
-            "text-color": "#ffffff",
-            "text-halo-color": "#000000",
-            "text-halo-width": 2,
-            "text-opacity": 0.95
-             }
-             }
-             ]
-            }
-            """
             
-            mapView.mapboxMap.loadStyleJSON(citizenStyleJSON) { result in
+            mapView.mapboxMap.loadStyleJSON(styleJSON) { result in
                 switch result {
                 case .success(let style):
                     print("✅ Citizen style loaded: \(style)")
@@ -691,12 +380,61 @@ extension CitizenStyleMapView {
                     mapView.mapboxMap.style.uri = StyleURI.dark
                 }
             }
-        } catch {
+        
+        }
+        catch {
             print("❌ Error loading style from bundle: \(error)")
             mapView.mapboxMap.style.uri = StyleURI.dark
         }
     }
+    
+    func updateUIView(_ mapView: MapView, context: Context) {
+        // Enable beautiful location puck (but don't reset camera)
+        if userLocation != nil {
+            mapView.location.options.puckType = .puck2D()
+            print("📍 Location puck enabled")
+        }
+        
+        // Note: Camera is only set once in makeUIView, allowing free scrolling
+    }
 }
+
+// MARK: - Alternative: Load from Bundle File (Async)
+// extension CitizenStyleMapView {
+//     private func loadCitizenStyleFromBundle(to mapView: MapView) async {
+//         do {
+//             guard let path = Bundle.main.path(forResource: "CitizenMapStyle", ofType: "json") else {
+//                 print("❌ CitizenMapStyle.json not found in bundle")
+//                 mapView.mapboxMap.style.uri = StyleURI.dark
+//                 return
+//             }
+            
+//             let jsonData = try Data(contentsOf: URL(fileURLWithPath: path))
+//             let jsonString = String(data: jsonData, encoding: .utf8)
+            
+//             guard let styleJSON = jsonString else {
+//                 print("❌ Could not convert JSON data to string")
+//                 mapView.mapboxMap.style.uri = StyleURI.dark
+//                 return
+//             }
+            
+            
+//             mapView.mapboxMap.loadStyleJSON(styleJSON) { result in
+//                 switch result {
+//                 case .success(let style):
+//                     print("✅ Citizen style loaded: \(style)")
+//                     // Set camera...
+//                 case .failure(let error):
+//                     print("❌ Failed: \(error)")
+//                     mapView.mapboxMap.style.uri = StyleURI.dark
+//                 }
+//             }
+//         } catch {
+//             print("❌ Error loading style from bundle: \(error)")
+//             mapView.mapboxMap.style.uri = StyleURI.dark
+//         }
+//     }
+// }
 
 // MARK: - Async Location Service Extension
 extension LocationService {
