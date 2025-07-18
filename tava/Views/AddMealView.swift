@@ -1,7 +1,55 @@
 import SwiftUI
 import PhotosUI
+import UIKit
+
+// MARK: - Image Picker View
+struct ImagePickerView: UIViewControllerRepresentable {
+    let sourceType: UIImagePickerController.SourceType
+    let completion: (UIImage) -> Void
+    @Environment(\.dismiss) private var dismiss
+    
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = sourceType
+        picker.delegate = context.coordinator
+        
+        // Add option to switch between camera and photo library
+        if sourceType == .camera {
+            picker.cameraDevice = .rear
+            picker.showsCameraControls = true
+        }
+        
+        return picker
+    }
+    
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let parent: ImagePickerView
+        
+        init(_ parent: ImagePickerView) {
+            self.parent = parent
+        }
+        
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+            if let image = info[.originalImage] as? UIImage {
+                parent.completion(image)
+            }
+            parent.dismiss()
+        }
+        
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            parent.dismiss()
+        }
+    }
+}
 
 struct AddMealView: View {
+    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var mealService: MealService
     @EnvironmentObject var googlePlacesService: GooglePlacesService
     @EnvironmentObject var locationService: LocationService
@@ -20,51 +68,34 @@ struct AddMealView: View {
     @State private var selectedPhotos: [PhotosPickerItem] = []
     @State private var selectedImages: [UIImage] = []
     @State private var showingImagePicker = false
-    @State private var showingCamera = false
+    @State private var showingCamera = true // Start with camera open
     @State private var showingRestaurantSearch = false
     
     @State private var isSubmitting = false
     @State private var showingSuccess = false
     
+    // New state to track workflow step
+    @State private var currentStep: AddMealStep = .photoSelection
+    
+    enum AddMealStep {
+        case photoSelection
+        case mealDetails
+    }
+    
     var body: some View {
         NavigationView {
-            ScrollView {
-                VStack(spacing: 24) {
-                    // Photo Section
-                    photoSection
-                    
-                    // Meal Type Selection
-                    mealTypeSection
-                    
-                    // Restaurant Selection (if restaurant meal)
-                    if selectedMealType == .restaurant {
-                        restaurantSection
-                    }
-                    
-                    // Meal Details
-                    mealDetailsSection
-                    
-                    // Tags Section
-                    tagsSection
-                    
-                    // Privacy & Settings
-                    privacySection
-                    
-                    // Submit Button
-                    submitButton
-                }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 100)
+            contentView
+        }
+        .fullScreenCover(isPresented: $showingCamera) {
+            ImagePickerView(sourceType: .camera) { image in
+                selectedImages.append(image)
+                currentStep = .mealDetails
             }
-            .navigationTitle("Add Meal")
-            .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Clear") {
-                        clearForm()
-                    }
-                    .disabled(isFormEmpty)
-                }
+        }
+        .sheet(isPresented: $showingImagePicker) {
+            ImagePickerView(sourceType: .photoLibrary) { image in
+                selectedImages.append(image)
+                currentStep = .mealDetails
             }
         }
         .sheet(isPresented: $showingRestaurantSearch) {
@@ -73,9 +104,144 @@ struct AddMealView: View {
         .alert("Meal Added!", isPresented: $showingSuccess) {
             Button("OK") {
                 clearForm()
+                dismiss()
             }
         } message: {
             Text("Your meal has been successfully shared!")
+        }
+        .onChange(of: selectedPhotos) { photos in
+            loadSelectedPhotos()
+        }
+    }
+    
+    @ViewBuilder
+    private var contentView: some View {
+        if currentStep == .photoSelection {
+            photoSelectionView
+        } else {
+            mealDetailsView
+        }
+    }
+    
+    private func loadSelectedPhotos() {
+        Task {
+            selectedImages = []
+            for item in selectedPhotos {
+                if let data = try? await item.loadTransferable(type: Data.self),
+                   let image = UIImage(data: data) {
+                    selectedImages.append(image)
+                }
+            }
+            if !selectedImages.isEmpty {
+                currentStep = .mealDetails
+            }
+        }
+    }
+    
+    // MARK: - Photo Selection View
+    private var photoSelectionView: some View {
+        VStack(spacing: 30) {
+            VStack(spacing: 16) {
+                Image(systemName: "camera.plus")
+                    .font(.system(size: 80))
+                    .foregroundColor(.primary)
+                
+                Text("Add a Photo")
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
+                
+                Text("Camera will open automatically, or choose from your library")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+            }
+            
+            VStack(spacing: 16) {
+                Button(action: {
+                    showingCamera = true
+                }) {
+                    HStack {
+                        Image(systemName: "camera.fill")
+                        Text("Take Photo")
+                            .fontWeight(.medium)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.black)
+                    .foregroundColor(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                
+                Button(action: {
+                    showingImagePicker = true
+                }) {
+                    HStack {
+                        Image(systemName: "photo.on.rectangle")
+                        Text("Choose from Library")
+                            .fontWeight(.medium)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color(.systemGray6))
+                    .foregroundColor(.primary)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+            }
+            .padding(.horizontal, 20)
+            
+            Spacer()
+        }
+        .navigationTitle("Add Meal")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button("Cancel") {
+                    dismiss()
+                }
+            }
+        }
+    }
+    
+    // MARK: - Meal Details View
+    private var mealDetailsView: some View {
+        ScrollView {
+            VStack(spacing: 24) {
+                // Photo Section
+                photoSection
+                
+                // Meal Type Selection
+                mealTypeSection
+                
+                // Restaurant Selection (if restaurant meal)
+                if selectedMealType == .restaurant {
+                    restaurantSection
+                }
+                
+                // Meal Details
+                mealDetailsSection
+                
+                // Tags Section
+                tagsSection
+                
+                // Privacy & Settings
+                privacySection
+                
+                // Submit Button
+                submitButton
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 100)
+        }
+        .navigationTitle("Add Meal")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button("Clear") {
+                    clearForm()
+                }
+                .disabled(isFormEmpty)
+            }
         }
     }
     

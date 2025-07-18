@@ -1,123 +1,105 @@
 import SwiftUI
 
 struct MainTabView: View {
-    @StateObject private var supabase = SupabaseClient.shared
-    @StateObject private var locationService = LocationService()
-    @StateObject private var mealService = MealService()
-    @StateObject private var googlePlacesService = GooglePlacesService()
-    @State private var selectedTab: Int = 0
-    @State private var showAddMeal: Bool = false
+    @State private var selectedTab = 0
+    @State private var showAddMeal = false
     
     var body: some View {
-        ZStack {
+        ZStack(alignment: .bottom) {
             // Main content based on selected tab
-            Group {
-                switch selectedTab {
-                case 0:
-                    MapFeedView()
-                        .environmentObject(supabase)
-                        .environmentObject(locationService)
-                        .environmentObject(mealService)
-                        .environmentObject(googlePlacesService)
-                case 1:
-                    ProfileView()
-                        .environmentObject(supabase)
-                        .environmentObject(locationService)
-                        .environmentObject(mealService)
-                        .environmentObject(googlePlacesService)
-                default:
-                    MapFeedView()
-                        .environmentObject(supabase)
-                        .environmentObject(locationService)
-                        .environmentObject(mealService)
-                        .environmentObject(googlePlacesService)
-                }
+            TabView(selection: $selectedTab) {
+                MapFeedView()
+                    .tag(0)
+                SearchView()
+                    .tag(1)
+                ProfileView()
+                    .tag(2)
+                
             }
-        }
-        .overlay(alignment: .bottom) {
-            // Custom Tab Bar with Floating Plus Button
-            ZStack {
-                // Black Tab Bar Background (covers full bottom area)
-                VStack(spacing: 0) {
-                    Rectangle()
-                        .fill(Color.black)
-                        .frame(height: 83)
-                    
-                    Rectangle()
-                        .fill(Color.black)
-                        .frame(height: 34) // Safe area
-                }
-                
-                // Tab Bar Content
-                VStack(spacing: 0) {
-                    
-                    HStack(spacing: 0) {
-                        // Discover Tab
-                        TabButton(
-                            icon: "map.fill",
-                            title: "Discover",
-                            isSelected: selectedTab == 0
-                        ) {
-                            selectedTab = 0
-                        }
-                        
-                        Spacer()
-                        
-                        // Profile Tab  
-                        TabButton(
-                            icon: "person.fill",
-                            title: "Profile",
-                            isSelected: selectedTab == 1
-                        ) {
-                            selectedTab = 1
-                        }
-                        
-                        // Space for floating button
-                         HStack {
-                        Spacer()
-                        
-                        FloatingPlusButton {
-                            showAddMeal = true
-                        }
-                        .offset(y: -28)
-                        
-                    
-                    }
-                    }
-                    .padding(.horizontal, 10)
-                    .frame(height: 83)
-                    
-                    // Safe area padding
-                    Spacer()
-                        .frame(height: 34)
-                }
-                
-                
+            .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
             
-                   
-                    
-                    Spacer()
-            }
+            // Custom Tab Bar
+            CustomTabBar(selectedTab: $selectedTab, showAddMeal: $showAddMeal)
         }
         .ignoresSafeArea(.container, edges: .bottom)
-        
-        .preferredColorScheme(.dark)
         .sheet(isPresented: $showAddMeal) {
             AddMealView()
-                .environmentObject(supabase)
-                .environmentObject(locationService)
-                .environmentObject(mealService)
-                .environmentObject(googlePlacesService)
-        }
-        .onAppear {
-            locationService.requestLocationPermission()
         }
     }
 }
 
-// MARK: - Tab Button Component
-struct TabButton: View {
+struct CustomTabBar: View {
+    @Binding var selectedTab: Int
+    @Binding var showAddMeal: Bool
+    
+    var body: some View {
+        HStack(spacing: 0) {
+            // Home Tab
+            TabBarButton(
+                icon: "house",
+                selectedIcon: "house.fill",
+                title: "Home",
+                isSelected: selectedTab == 0
+            ) {
+                selectedTab = 0
+            }
+            .frame(maxWidth: .infinity)
+            
+            // Search Tab
+            TabBarButton(
+                icon: "magnifyingglass",
+                selectedIcon: "magnifyingglass",
+                title: "Search",
+                isSelected: selectedTab == 1
+            ) {
+                selectedTab = 1
+            }
+            .frame(maxWidth: .infinity)
+            
+
+            
+            // Profile Tab
+            TabBarButton(
+                icon: "person",
+                selectedIcon: "person.fill",
+                title: "Profile",
+                isSelected: selectedTab == 2
+            ) {
+                selectedTab = 2
+            }
+            .frame(maxWidth: .infinity)
+
+                        // Plus Tab (Floating)
+            Button(action: {
+                showAddMeal = true
+            }) {
+                ZStack {
+                    Circle()
+                        .fill(Color.black)
+                        .frame(width: 64, height: 64)
+                        .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
+                    
+                    Image(systemName: "plus")
+                        .font(.system(size: 24, weight: .semibold))
+                        .foregroundColor(.white)
+                }
+            }
+            .offset(y: -20) // Extends above the tab bar
+            .frame(maxWidth: .infinity)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .padding(.bottom, 24) // Extends into safe area
+        .background(
+            Color.white
+                .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: -5)
+        )
+    }
+}
+
+struct TabBarButton: View {
     let icon: String
+    let selectedIcon: String
     let title: String
     let isSelected: Bool
     let action: () -> Void
@@ -125,76 +107,30 @@ struct TabButton: View {
     var body: some View {
         Button(action: action) {
             VStack(spacing: 4) {
-                Image(systemName: icon)
+                Image(systemName: isSelected ? selectedIcon : icon)
                     .font(.system(size: 20, weight: .medium))
-                    .foregroundColor(isSelected ? .orange : .gray)
+                    .foregroundColor(isSelected ? .black : .gray)
                 
                 Text(title)
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(isSelected ? .orange : .gray)
+                    .foregroundColor(isSelected ? .black : .gray)
             }
-            .frame(maxWidth: .infinity)
         }
-        .buttonStyle(PlainButtonStyle())
     }
 }
 
-// MARK: - Floating Plus Button
-struct FloatingPlusButton: View {
-    let action: () -> Void
-    @State private var isPressed = false
-    
+
+struct SearchView: View {
     var body: some View {
-        Button(action: action) {
-            ZStack {
-                // Outer glow effect
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [
-                                Color.orange.opacity(0.6),
-                                Color.orange.opacity(0.3),
-                                Color.orange.opacity(0.1),
-                                Color.clear
-                            ],
-                            center: .center,
-                            startRadius: 25,
-                            endRadius: 45
-                        )
-                    )
-                    .frame(width: 90, height: 90)
-                
-                // Main circular button
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color.orange,
-                                Color.orange.opacity(0.8)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 56, height: 56)
-                    .shadow(
-                        color: .orange.opacity(0.4),
-                        radius: 12,
-                        x: 0,
-                        y: 6
-                    )
-                
-                // Plus icon
-                Image(systemName: "plus")
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundColor(.white)
+        NavigationView {
+            VStack {
+                Text("Search")
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
+                Spacer()
             }
+            .navigationTitle("Search")
         }
-        .scaleEffect(isPressed ? 0.95 : 1.0)
-        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isPressed)
-        .onLongPressGesture(minimumDuration: 0, maximumDistance: .infinity, pressing: { pressing in
-            isPressed = pressing
-        }, perform: {})
-        .buttonStyle(PlainButtonStyle())
     }
-} 
+}
+
