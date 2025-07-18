@@ -1,10 +1,14 @@
 import SwiftUI
+import CoreLocation
 
 struct RestaurantSearchView: View {
     @Binding var selectedRestaurant: Restaurant?
     @Environment(\.dismiss) private var dismiss
     @StateObject private var googlePlacesService = GooglePlacesService()
+    @EnvironmentObject var locationService: LocationService
     @State private var searchText = ""
+    @State private var searchTask: Task<Void, Never>?
+    @State private var hasSearched = false
     
     var body: some View {
         NavigationView {
@@ -16,9 +20,38 @@ struct RestaurantSearchView: View {
                     
                     TextField("Search restaurants...", text: $searchText)
                         .textFieldStyle(.plain)
+                        .onChange(of: searchText) { newValue in
+                            if newValue.isEmpty {
+                                hasSearched = false
+                                googlePlacesService.searchResults = []
+                            } else if newValue.count >= 2 {
+                                // Cancel previous search
+                                searchTask?.cancel()
+                                
+                                // Start new search immediately
+                                searchTask = Task {
+                                    await performSearch(query: newValue)
+                                }
+                            } else {
+                                // Less than 2 characters, clear results
+                                hasSearched = false
+                                googlePlacesService.searchResults = []
+                            }
+                        }
                         .onSubmit {
                             performSearch()
                         }
+                    
+                    if !searchText.isEmpty {
+                        Button(action: {
+                            searchText = ""
+                            hasSearched = false
+                            googlePlacesService.searchResults = []
+                        }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.gray)
+                        }
+                    }
                 }
                 .padding()
                 .background(Color(.systemGray6))
@@ -26,10 +59,15 @@ struct RestaurantSearchView: View {
                 .padding(.horizontal)
                 
                 if googlePlacesService.isLoading {
-                    Spacer()
-                    ProgressView("Searching...")
-                    Spacer()
-                } else if googlePlacesService.searchResults.isEmpty && !searchText.isEmpty {
+                    HStack {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                        Text("Searching nearby...")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                    }
+                    .padding()
+                } else if googlePlacesService.searchResults.isEmpty && !searchText.isEmpty && hasSearched {
                     Spacer()
                     VStack {
                         Image(systemName: "magnifyingglass")
@@ -52,7 +90,7 @@ struct RestaurantSearchView: View {
                         Text("Search for restaurants")
                             .font(.headline)
                             .foregroundColor(.gray)
-                        Text("Find restaurants to add to your meal")
+                        Text("Start typing to find nearby restaurants")
                             .font(.subheadline)
                             .foregroundColor(.gray)
                     }
@@ -74,18 +112,39 @@ struct RestaurantSearchView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") {
+                        searchTask?.cancel()
                         dismiss()
                     }
+                }
+            }
+            .onAppear {
+                // Request location permission if needed
+                if locationService.authorizationStatus == .notDetermined {
+                    locationService.requestLocationPermission()
                 }
             }
         }
     }
     
-    private func performSearch() {
-        guard !searchText.isEmpty else { return }
+
+    
+    private func performSearch(query: String? = nil) {
+        let searchQuery = query ?? searchText
+        guard !searchQuery.isEmpty else { return }
         
         Task {
-            await googlePlacesService.searchRestaurants(query: searchText)
+            // Use user location for proximity-based results
+            await googlePlacesService.searchRestaurants(
+                query: searchQuery,
+                location: locationService.location,
+                radius: 5000, // 5km radius
+                limit: 20
+            )
+            
+            // Mark that we've completed a search
+            await MainActor.run {
+                hasSearched = true
+            }
         }
     }
 }
@@ -94,70 +153,51 @@ struct RestaurantSearchRow: View {
     let place: GooglePlace
     let onSelect: () -> Void
     let apiKey = Bundle.main.infoDictionary?["GOOGLE_API_KEY"] as! String
+    @EnvironmentObject var locationService: LocationService
+    
+    private var distanceText: String? {
+        guard let userLocation = locationService.location else { return nil }
+        
+        let restaurantLocation = CLLocation(
+            latitude: place.geometry.location.lat,
+            longitude: place.geometry.location.lng
+        )
+        
+        let distance = userLocation.distance(from: restaurantLocation)
+        
+        if distance < 1000 {
+            return "\(Int(distance))m"
+        } else {
+            return String(format: "%.1fkm", distance / 1000)
+        }
+    }
+    
     var body: some View {
         Button(action: onSelect) {
             HStack {
-                AsyncImage(url: URL(string: place.photos?.first.map { 
-                    "https://maps.googleapis.com/maps/api/place/photo?photo_reference=\($0.photoReference)&maxwidth=400&key=\(apiKey)" 
-                } ?? "")) { image in
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                } placeholder: {
-                    Rectangle()
-                        .fill(Color(.systemGray5))
-                        .overlay(
-                            Image(systemName: "building.2.fill")
-                                .foregroundColor(.gray)
-                        )
-                }
-                .frame(width: 60, height: 60)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(place.name)
-                        .font(.headline)
-                        .fontWeight(.medium)
-                        .foregroundColor(.primary)
-                        .multilineTextAlignment(.leading)
-                    
-                    Text(place.formattedAddress ?? "Address not available")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                    
                     HStack {
-                        if let rating = place.rating {
-                            HStack(spacing: 2) {
-                                Image(systemName: "star.fill")
-                                    .foregroundColor(.yellow)
-                                    .font(.caption2)
-                                Text(String(format: "%.1f", rating))
-                                    .font(.caption)
-                                    .foregroundColor(.gray)
-                            }
-                        }
-                        
-                        if let priceLevel = place.priceLevel {
-                            Text(String(repeating: "$", count: max(1, priceLevel + 1)))
-                                .font(.caption)
-                                .foregroundColor(.green)
-                                .fontWeight(.medium)
-                                .padding(.leading, 4)
-                        }
+                        Text(place.name)
+                            .font(.headline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.primary)
+                            .multilineTextAlignment(.leading)
                         
                         Spacer()
+
+                    }
+                    
+                    HStack {
+                        Text(place.formattedAddress ?? "Address not available")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
                         
-                        if place.businessStatus == "OPERATIONAL" {
-                            Text("Open")
-                                .font(.caption)
-                                .foregroundColor(.green)
-                        }
+                        Spacer()
+                    
                     }
                 }
-                
-                Spacer()
                 
                 Image(systemName: "chevron.right")
                     .foregroundColor(.gray)

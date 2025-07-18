@@ -27,18 +27,19 @@ class GooglePlacesService: ObservableObject {
                 isLoading = false
             }
         }
-        
+        print("Searching for restaurants with query: \(query)")
         do {
             let places = try await performTextSearch(
                 query: query,
                 location: location,
                 radius: radius
             )
-            
+            print("Search results: \(places)")
             await MainActor.run {
                 self.searchResults = Array(places.prefix(limit))
             }
         } catch {
+            print("Error searching for restaurants: \(error)")
             await MainActor.run {
                 self.error = error
             }
@@ -113,7 +114,7 @@ class GooglePlacesService: ObservableObject {
         radius: Int
     ) async throws -> [GooglePlace] {
         var components = URLComponents(string: "\(baseURL)/textsearch/json")!
-        
+        print("Performing text search with query: \(query)")
         var queryItems = [
             URLQueryItem(name: "query", value: "\(query) restaurant"),
             URLQueryItem(name: "type", value: "restaurant"),
@@ -136,16 +137,38 @@ class GooglePlacesService: ObservableObject {
         
         guard let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode == 200 else {
+            print("Error performing text search: \(response)")
             throw GooglePlacesError.apiError
         }
         
         let searchResponse = try JSONDecoder().decode(GooglePlaceSearchResponse.self, from: data)
-        
+        print("Search response: \(searchResponse)")
         guard searchResponse.status == "OK" else {
             throw GooglePlacesError.apiError
         }
         
-        return searchResponse.results
+        var results = searchResponse.results
+        
+        // Sort results by distance from user location (closest first)
+        if let userLocation = location {
+            results.sort { place1, place2 in
+                let location1 = CLLocation(
+                    latitude: place1.geometry.location.lat,
+                    longitude: place1.geometry.location.lng
+                )
+                let location2 = CLLocation(
+                    latitude: place2.geometry.location.lat,
+                    longitude: place2.geometry.location.lng
+                )
+                
+                let distance1 = userLocation.distance(from: location1)
+                let distance2 = userLocation.distance(from: location2)
+                
+                return distance1 < distance2
+            }
+        }
+        
+        return results
     }
     
     private func performNearbySearch(

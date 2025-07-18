@@ -39,43 +39,9 @@ struct FeedView: View {
                     }
                 }
                 .scrollTargetBehavior(.paging)
-                
-                // Top overlay with profile button
-                VStack {
-                    HStack {
-                        Button(action: {
-                            showingProfile = true
-                        }) {
-                            Circle()
-                                .fill(Color.gray.opacity(0.3))
-                                .frame(width: 40, height: 40)
-                                .overlay(
-                                    Image(systemName: "person.fill")
-                                        .foregroundColor(.white)
-                                )
-                        }
-                        
-                        Spacer()
-                        
-                        Text("Feed")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .foregroundColor(.white)
-                        
-                        Spacer()
-                        
-                        Button(action: {
-                            // Refresh feed
-                        }) {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.title3)
-                                .foregroundColor(.white)
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 10)
-                    
-                    Spacer()
+                .refreshable {
+                    print("Refreshing feed")
+                    print("STILL NEED TO IMPLEMENT REFRESHING")       // Refresh feed
                 }
             }
         }

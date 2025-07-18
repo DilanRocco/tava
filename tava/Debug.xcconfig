@@ -4,4 +4,9 @@
 // Supabase Configuration
 SUPABASE_URL = https:/$()/olqprtnexykoipqnigag.supabase.co
 SUPABASE_KEY = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9scXBydG5leHlrb2lwcW5pZ2FnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI3NzkzNDQsImV4cCI6MjA2ODM1NTM0NH0.7gBPCNKpVhr6wYviC5IyqSp14xyrRVz2nqD0VK_2nhI
+
+// Google Places API Configuration  
+GOOGLE_API_KEY = AIzaSyCJDTgT6GX0bP-9IWYh7xrCc7VKqkrFX18
+
+// Mapbox Configuration
 MAPBOX_API_KEY = pk.eyJ1IjoiZGlsYW5yb2NjbyIsImEiOiJjbWQ4Mjc1N20wcm4wMmxwdTNiMG85c2dnIn0.bEwWzSy2PGQ5V-DasCfILw

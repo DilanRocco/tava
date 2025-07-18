@@ -65,10 +65,10 @@ struct AddMealView: View {
     @State private var cost = ""
     @State private var selectedRestaurant: Restaurant?
     
-    @State private var selectedPhotos: [PhotosPickerItem] = []
     @State private var selectedImages: [UIImage] = []
+    @State private var photosPickerItems: [PhotosPickerItem] = []
     @State private var showingImagePicker = false
-    @State private var showingCamera = true // Start with camera open
+    @State private var showingCamera = false
     @State private var showingRestaurantSearch = false
     
     @State private var isSubmitting = false
@@ -109,9 +109,7 @@ struct AddMealView: View {
         } message: {
             Text("Your meal has been successfully shared!")
         }
-        .onChange(of: selectedPhotos) { photos in
-            loadSelectedPhotos()
-        }
+
     }
     
     @ViewBuilder
@@ -122,21 +120,7 @@ struct AddMealView: View {
             mealDetailsView
         }
     }
-    
-    private func loadSelectedPhotos() {
-        Task {
-            selectedImages = []
-            for item in selectedPhotos {
-                if let data = try? await item.loadTransferable(type: Data.self),
-                   let image = UIImage(data: data) {
-                    selectedImages.append(image)
-                }
-            }
-            if !selectedImages.isEmpty {
-                currentStep = .mealDetails
-            }
-        }
-    }
+
     
     // MARK: - Photo Selection View
     private var photoSelectionView: some View {
@@ -149,12 +133,6 @@ struct AddMealView: View {
                 Text("Add a Photo")
                     .font(.largeTitle)
                     .fontWeight(.bold)
-                
-                Text("Camera will open automatically, or choose from your library")
-                    .font(.body)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
             }
             
             VStack(spacing: 16) {
@@ -224,9 +202,6 @@ struct AddMealView: View {
                 // Tags Section
                 tagsSection
                 
-                // Privacy & Settings
-                privacySection
-                
                 // Submit Button
                 submitButton
             }
@@ -268,7 +243,7 @@ struct AddMealView: View {
                         .buttonStyle(.bordered)
                         
                         PhotosPicker(
-                            selection: $selectedPhotos,
+                            selection: $photosPickerItems,
                             maxSelectionCount: 5,
                             matching: .images
                         ) {
@@ -294,7 +269,6 @@ struct AddMealView: View {
                                 
                                 Button(action: {
                                     selectedImages.remove(at: index)
-                                    selectedPhotos.remove(at: index)
                                 }) {
                                     Image(systemName: "xmark.circle.fill")
                                         .foregroundColor(.white)
@@ -326,15 +300,17 @@ struct AddMealView: View {
                 }
             }
         }
-        .onChange(of: selectedPhotos) { newItems in
+        .onChange(of: photosPickerItems) { newItems in
             Task {
-                selectedImages = []
+                // Convert new PhotosPicker items to UIImages and append them
                 for item in newItems {
                     if let data = try? await item.loadTransferable(type: Data.self),
                        let image = UIImage(data: data) {
                         selectedImages.append(image)
                     }
                 }
+                // Clear the picker items since we've processed them
+                photosPickerItems = []
             }
         }
     }
@@ -346,11 +322,8 @@ struct AddMealView: View {
             
             Picker("Meal Type", selection: $selectedMealType) {
                 ForEach(MealType.allCases, id: \.self) { type in
-                    HStack {
-                        Image(systemName: type == .homemade ? "house.fill" : "building.2.fill")
-                        Text(type.rawValue.capitalized)
-                    }
-                    .tag(type)
+                    Text(type.rawValue.capitalized)
+                        .tag(type)
                 }
             }
             .pickerStyle(.segmented)
@@ -391,28 +364,26 @@ struct AddMealView: View {
                 .font(.headline)
             
             VStack(spacing: 12) {
-                TextField("Meal title (optional)", text: $title)
+                TextField("Meal title", text: $title)
                     .textFieldStyle(.roundedBorder)
                 
-                TextField("Description", text: $description, axis: .vertical)
+                TextField("Description (optional)", text: $description, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
                     .lineLimit(3...6)
                 
-                if selectedMealType == .homemade {
-                    TextField("Ingredients (optional)", text: $ingredients, axis: .vertical)
-                        .textFieldStyle(.roundedBorder)
-                        .lineLimit(2...4)
-                }
-                
-                HStack {
-                    Text("Rating")
-                    Spacer()
-                    StarRatingView(rating: $rating)
-                }
-                
-                TextField("Cost (optional)", text: $cost)
-                    .textFieldStyle(.roundedBorder)
-                    .keyboardType(.decimalPad)
+                if selectedMealType == .restaurant {
+                    HStack {
+                        Text("Rating")
+                        Spacer()
+                        StarRatingView(rating: $rating)
+                    }
+                                 }
+                 
+                 if selectedMealType == .homemade {
+                     TextField("Ingredients (optional)", text: $ingredients, axis: .vertical)
+                         .textFieldStyle(.roundedBorder)
+                         .lineLimit(2...4)
+                 }
             }
         }
     }
@@ -448,20 +419,7 @@ struct AddMealView: View {
         }
     }
     
-    private var privacySection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Privacy")
-                .font(.headline)
-            
-            Picker("Privacy", selection: $privacy) {
-                ForEach(MealPrivacy.allCases, id: \.self) { privacy in
-                    Text(privacy.displayName)
-                        .tag(privacy)
-                }
-            }
-            .pickerStyle(.segmented)
-        }
-    }
+
     
     private var submitButton: some View {
         Button(action: submitMeal) {
@@ -553,8 +511,8 @@ struct AddMealView: View {
         rating = 0
         cost = ""
         selectedRestaurant = nil
-        selectedPhotos = []
         selectedImages = []
+        photosPickerItems = []
     }
 }
 
