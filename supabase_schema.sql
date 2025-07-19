@@ -132,6 +132,16 @@ CREATE TABLE public.meal_reactions (
     UNIQUE(user_id, meal_id)
 );
 
+-- Meal comments
+CREATE TABLE public.meal_comments (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    meal_id UUID REFERENCES public.meals(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Create indexes for performance
 CREATE INDEX idx_meals_user_id ON public.meals(user_id);
 CREATE INDEX idx_meals_created_at ON public.meals(created_at DESC);
@@ -144,6 +154,9 @@ CREATE INDEX idx_photos_meal_id ON public.photos(meal_id);
 CREATE INDEX idx_user_follows_follower ON public.user_follows(follower_id);
 CREATE INDEX idx_user_follows_following ON public.user_follows(following_id);
 CREATE INDEX idx_bookmarks_user_id ON public.bookmarks(user_id);
+CREATE INDEX idx_meal_comments_meal_id ON public.meal_comments(meal_id);
+CREATE INDEX idx_meal_comments_user_id ON public.meal_comments(user_id);
+CREATE INDEX idx_meal_reactions_meal_id ON public.meal_reactions(meal_id);
 
 -- Row Level Security (RLS) Policies
 
@@ -157,6 +170,7 @@ ALTER TABLE public.collaborative_meal_participants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.photos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.bookmarks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.meal_reactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.meal_comments ENABLE ROW LEVEL SECURITY;
 
 -- Users policies
 CREATE POLICY "Users can view public profiles" ON public.users
@@ -244,6 +258,15 @@ CREATE POLICY "Users can view reactions on accessible meals" ON public.meal_reac
 CREATE POLICY "Users can manage own reactions" ON public.meal_reactions
     FOR ALL USING (auth.uid() = user_id);
 
+-- Meal comments policies
+CREATE POLICY "Users can view comments on accessible meals" ON public.meal_comments
+    FOR SELECT USING (
+        meal_id IN (SELECT id FROM public.meals)
+    );
+
+CREATE POLICY "Users can manage own comments" ON public.meal_comments
+    FOR ALL USING (auth.uid() = user_id);
+
 -- Functions for common queries
 
 -- Get user's feed (meals from followed users)
@@ -257,11 +280,14 @@ RETURNS TABLE (
     meal_title VARCHAR,
     meal_description TEXT,
     meal_type meal_type,
-    restaurant_name VARCHAR,
-    location GEOGRAPHY,
+    location_text TEXT,
+    tags TEXT[],
     rating INTEGER,
     eaten_at TIMESTAMP WITH TIME ZONE,
-    photo_urls TEXT[]
+    likes_count INTEGER,
+    comments_count INTEGER,
+    bookmarks_count INTEGER,
+    primary_photo_file_path TEXT
 ) AS $$
 BEGIN
     RETURN QUERY
@@ -274,21 +300,48 @@ BEGIN
         m.title as meal_title,
         m.description as meal_description,
         m.meal_type,
-        r.name as restaurant_name,
-        m.location,
+        CASE 
+            WHEN r.name IS NOT NULL THEN r.name || ', ' || COALESCE(r.city, '')
+            ELSE 'Home Kitchen'
+        END as location_text,
+        m.tags,
         m.rating,
         m.eaten_at,
-        ARRAY_AGG(p.url) as photo_urls
+        COALESCE(reaction_counts.likes_count, 0)::INTEGER as likes_count,
+        COALESCE(comment_counts.comments_count, 0)::INTEGER as comments_count,
+        COALESCE(bookmark_counts.bookmarks_count, 0)::INTEGER as bookmarks_count,
+        primary_photos.storage_path as primary_photo_file_path
     FROM public.meals m
     JOIN public.users u ON u.id = m.user_id
     LEFT JOIN public.restaurants r ON r.id = m.restaurant_id
-    LEFT JOIN public.photos p ON p.meal_id = m.id
+    LEFT JOIN (
+        SELECT mr.meal_id, COUNT(*)::INTEGER as likes_count
+        FROM public.meal_reactions mr
+        WHERE mr.reaction_type = 'like'
+        GROUP BY mr.meal_id
+    ) reaction_counts ON reaction_counts.meal_id = m.id
+    LEFT JOIN (
+        SELECT mc.meal_id, COUNT(*)::INTEGER as comments_count
+        FROM public.meal_comments mc
+        GROUP BY mc.meal_id
+    ) comment_counts ON comment_counts.meal_id = m.id
+    LEFT JOIN (
+        SELECT b.meal_id, COUNT(*)::INTEGER as bookmarks_count
+        FROM public.bookmarks b
+        WHERE b.meal_id IS NOT NULL
+        GROUP BY b.meal_id
+    ) bookmark_counts ON bookmark_counts.meal_id = m.id
+    LEFT JOIN (
+        SELECT DISTINCT ON (p.meal_id) p.meal_id, p.storage_path
+        FROM public.photos p
+        WHERE p.meal_id IS NOT NULL
+        ORDER BY p.meal_id, p.is_primary DESC, p.created_at ASC
+    ) primary_photos ON primary_photos.meal_id = m.id
     WHERE m.user_id IN (
         SELECT following_id FROM public.user_follows WHERE follower_id = user_uuid
         UNION SELECT user_uuid -- Include own meals
     )
     AND (m.privacy = 'public' OR m.privacy = 'friends_only')
-    GROUP BY m.id, u.id, r.name
     ORDER BY m.eaten_at DESC
     LIMIT limit_count OFFSET offset_count;
 END;
@@ -368,6 +421,9 @@ CREATE TRIGGER update_meals_updated_at BEFORE UPDATE ON public.meals
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_collaborative_meals_updated_at BEFORE UPDATE ON public.collaborative_meals
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_meal_comments_updated_at BEFORE UPDATE ON public.meal_comments
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column(); 
 
 -- Storage Configuration

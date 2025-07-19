@@ -615,43 +615,6 @@ struct CitizenStyleMapView: UIViewRepresentable {
     }
 }
 
-// MARK: - Alternative: Load from Bundle File (Async)
-// extension CitizenStyleMapView {
-//     private func loadCitizenStyleFromBundle(to mapView: MapView) async {
-//         do {
-//             guard let path = Bundle.main.path(forResource: "CitizenMapStyle", ofType: "json") else {
-//                 print("❌ CitizenMapStyle.json not found in bundle")
-//                 mapView.mapboxMap.style.uri = StyleURI.dark
-//                 return
-//             }
-            
-//             let jsonData = try Data(contentsOf: URL(fileURLWithPath: path))
-//             let jsonString = String(data: jsonData, encoding: .utf8)
-            
-//             guard let styleJSON = jsonString else {
-//                 print("❌ Could not convert JSON data to string")
-//                 mapView.mapboxMap.style.uri = StyleURI.dark
-//                 return
-//             }
-            
-            
-//             mapView.mapboxMap.loadStyleJSON(styleJSON) { result in
-//                 switch result {
-//                 case .success(let style):
-//                     print("✅ Citizen style loaded: \(style)")
-//                     // Set camera...
-//                 case .failure(let error):
-//                     print("❌ Failed: \(error)")
-//                     mapView.mapboxMap.style.uri = StyleURI.dark
-//                 }
-//             }
-//         } catch {
-//             print("❌ Error loading style from bundle: \(error)")
-//             mapView.mapboxMap.style.uri = StyleURI.dark
-//         }
-//     }
-// }
-
 // MARK: - Async Location Service Extension
 extension LocationService {
     func requestLocationPermission() async {

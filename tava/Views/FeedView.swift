@@ -11,18 +11,41 @@ struct FeedView: View {
     @State private var showingComments = false
     @State private var selectedMealId: String = ""
     
-    // Sample meal data - in real app this would come from your service
-    @State private var meals: [FeedMealItem] = FeedMealItem.sampleData
-    
     var body: some View {
         GeometryReader { geometry in
             ZStack {
                 Color.black.ignoresSafeArea()
                 
-                // Vertical scrolling feed
-                ScrollView(.vertical, showsIndicators: false) {
+                if mealService.isLoading && mealService.feedMeals.isEmpty {
+                    // Loading state
+                    VStack {
+                        ProgressView()
+                            .tint(.orange)
+                        Text("Loading feed...")
+                            .foregroundColor(.white)
+                            .padding(.top)
+                    }
+                } else if mealService.feedMeals.isEmpty {
+                    // Empty state
+                    VStack {
+                        Image(systemName: "fork.knife")
+                            .font(.system(size: 60))
+                            .foregroundColor(.orange)
+                        Text("No meals in your feed")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                            .padding(.top)
+                        Text("Follow other users to see their meals here!")
+                            .foregroundColor(.white.opacity(0.7))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 40)
+                    }
+                } else {
+                    // Vertical scrolling feed
+                    ScrollView(.vertical, showsIndicators: false) {
                     LazyVStack(spacing: 0) {
-                        ForEach(Array(meals.enumerated()), id: \.element.id) { index, meal in
+                        ForEach(Array(mealService.feedMeals.enumerated()), id: \.element.id) { index, meal in
                             FeedItemView(
                                 meal: meal,
                                 geometry: geometry,
@@ -40,13 +63,16 @@ struct FeedView: View {
                 }
                 .scrollTargetBehavior(.paging)
                 .refreshable {
-                    print("Refreshing feed")
-                    print("STILL NEED TO IMPLEMENT REFRESHING")       // Refresh feed
+                    await mealService.fetchFeedData()
+                }
                 }
             }
         }
         .ignoresSafeArea()
         .preferredColorScheme(.dark)
+        .task {
+            await mealService.fetchFeedData()
+        }
         .sheet(isPresented: $showingProfile) {
             ProfileView()
                 .environmentObject(supabase)
@@ -72,24 +98,61 @@ struct FeedItemView: View {
     
     var body: some View {
         ZStack {
-            // Background image/video
-            RoundedRectangle(cornerRadius: 0)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.orange.opacity(0.3),
-                            Color.black.opacity(0.7)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
+            ZStack {
+               
+                if let photoUrl = meal.photoUrl, !photoUrl.isEmpty {
+                    AsyncImage(url: URL(string: photoUrl)) { image in
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .clipped()
+                    } placeholder: {
+                        RoundedRectangle(cornerRadius: 0)
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color.orange.opacity(0.3),
+                                        Color.black.opacity(0.7)
+                                    ],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                            .overlay(
+                                ProgressView()
+                                    .tint(.white)
+                            )
+                    }
+                } else {
+                    // Fallback when no image
+                    RoundedRectangle(cornerRadius: 0)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.orange.opacity(0.3),
+                                    Color.black.opacity(0.7)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .overlay(
+                            Image(systemName: "photo.fill")
+                                .font(.system(size: 60))
+                                .foregroundColor(.white.opacity(0.3))
+                        )
+                }
+                
+                // Dark overlay for text readability
+                LinearGradient(
+                    colors: [
+                        Color.clear,
+                        Color.black.opacity(0.7)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
                 )
-                .overlay(
-                    // Placeholder for meal image
-                    Image(systemName: "photo.fill")
-                        .font(.system(size: 60))
-                        .foregroundColor(.white.opacity(0.3))
-                )
+            }
             
             // Content overlay
             VStack {
@@ -105,7 +168,7 @@ struct FeedItemView: View {
                                     .fill(Color.orange)
                                     .frame(width: 40, height: 40)
                                     .overlay(
-                                        Text(meal.userName.prefix(1))
+                                        Text((meal.displayName ?? meal.username).prefix(1))
                                             .font(.headline)
                                             .fontWeight(.bold)
                                             .foregroundColor(.white)
@@ -113,7 +176,7 @@ struct FeedItemView: View {
                             }
                             
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(meal.userName)
+                                Text(meal.displayName ?? meal.username)
                                     .font(.headline)
                                     .fontWeight(.bold)
                                     .foregroundColor(.white)
@@ -128,13 +191,15 @@ struct FeedItemView: View {
                         
                         // Meal info
                         VStack(alignment: .leading, spacing: 8) {
-                            Text(meal.mealName)
-                                .font(.title2)
-                                .fontWeight(.bold)
-                                .foregroundColor(.white)
+                            if let mealTitle = meal.mealTitle {
+                                Text(mealTitle)
+                                    .font(.title2)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.white)
+                            }
                             
-                            if !meal.description.isEmpty {
-                                Text(meal.description)
+                            if let description = meal.description, !description.isEmpty {
+                                Text(description)
                                     .font(.body)
                                     .foregroundColor(.white.opacity(0.9))
                                     .lineLimit(3)
@@ -158,11 +223,13 @@ struct FeedItemView: View {
                             
                             // Rating and time
                             HStack {
-                                HStack(spacing: 2) {
-                                    ForEach(0..<5) { index in
-                                        Image(systemName: index < meal.rating ? "star.fill" : "star")
-                                            .font(.caption)
-                                            .foregroundColor(.orange)
+                                if let rating = meal.rating {
+                                    HStack(spacing: 2) {
+                                        ForEach(0..<5) { index in
+                                            Image(systemName: index < rating ? "star.fill" : "star")
+                                                .font(.caption)
+                                                .foregroundColor(.orange)
+                                        }
                                     }
                                 }
                                 
@@ -266,84 +333,33 @@ struct FeedItemView: View {
 // MARK: - Supporting Views and Models
 
 struct FeedMealItem: Identifiable {
-    let id = UUID().uuidString
-    let userName: String
+    let id: String // meal_id from database
+    let userId: String
+    let username: String
+    let displayName: String?
+    let avatarUrl: String?
+    let mealTitle: String?
+    let description: String?
+    let mealType: String // 'restaurant' or 'homemade'
     let location: String
-    let mealName: String
-    let description: String
     let tags: [String]
-    let rating: Int
-    let timeAgo: String
+    let rating: Int?
+    let eatenAt: Date
     let likesCount: Int
     let commentsCount: Int
-    let imageUrl: String?
+    let bookmarksCount: Int
+    let photoUrl: String?
     
-    var shareText: String {
-        "\(mealName) at \(location) - Check out this amazing meal on Tava!"
+    var timeAgo: String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: eatenAt, relativeTo: Date())
     }
     
-    static let sampleData: [FeedMealItem] = [
-        FeedMealItem(
-            userName: "Sarah Chen",
-            location: "Chez Laurent, Paris",
-            mealName: "Duck Confit with Cherry Sauce",
-            description: "Absolutely incredible French cuisine! The duck was perfectly crispy and the cherry sauce was divine. Worth every penny!",
-            tags: ["french", "finedining", "duck", "romantic"],
-            rating: 5,
-            timeAgo: "2h ago",
-            likesCount: 127,
-            commentsCount: 23,
-            imageUrl: nil
-        ),
-        FeedMealItem(
-            userName: "Mike Rodriguez",
-            location: "Joe's Pizza, NYC",
-            mealName: "Classic Margherita Pizza",
-            description: "Nothing beats a good old NYC pizza slice. This place has been my go-to for years!",
-            tags: ["pizza", "nyc", "comfort", "classic"],
-            rating: 4,
-            timeAgo: "4h ago",
-            likesCount: 89,
-            commentsCount: 12,
-            imageUrl: nil
-        ),
-        FeedMealItem(
-            userName: "Aisha Patel",
-            location: "Spice Garden, Mumbai",
-            mealName: "Butter Chicken & Naan",
-            description: "Homestyle butter chicken that reminded me of my grandmother's cooking. The naan was fresh and warm!",
-            tags: ["indian", "homestyle", "comfort", "spicy"],
-            rating: 5,
-            timeAgo: "6h ago",
-            likesCount: 156,
-            commentsCount: 31,
-            imageUrl: nil
-        ),
-        FeedMealItem(
-            userName: "James Wilson",
-            location: "Home Kitchen",
-            mealName: "Homemade Ramen Bowl",
-            description: "Spent 8 hours making this ramen from scratch. The broth was so rich and flavorful!",
-            tags: ["homemade", "ramen", "japanese", "comfort"],
-            rating: 4,
-            timeAgo: "1d ago",
-            likesCount: 203,
-            commentsCount: 45,
-            imageUrl: nil
-        ),
-        FeedMealItem(
-            userName: "Emma Thompson",
-            location: "Green Leaf Cafe",
-            mealName: "Acai Bowl with Fresh Fruits",
-            description: "Perfect post-workout meal! Love how fresh and colorful this bowl is. Great for a healthy start to the day.",
-            tags: ["healthy", "acai", "breakfast", "fresh"],
-            rating: 4,
-            timeAgo: "1d ago",
-            likesCount: 94,
-            commentsCount: 18,
-            imageUrl: nil
-        )
-    ]
+    var shareText: String {
+        let title = mealTitle ?? "meal"
+        return "\(title) at \(location) - Check out this amazing meal on Tava!"
+    }
 }
 
 struct CommentsView: View {

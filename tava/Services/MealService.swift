@@ -9,10 +9,74 @@ class MealService: ObservableObject {
     @Published var meals: [MealWithDetails] = []
     @Published var userMeals: [MealWithDetails] = []
     @Published var nearbyMeals: [MealWithDetails] = []
+    @Published var feedMeals: [FeedMealItem] = []
     @Published var isLoading = false
     @Published var error: Error?
     
     // MARK: - Feed Operations
+    
+    func fetchFeedData(limit: Int = 20, offset: Int = 0) async {
+        isLoading = true
+        defer { isLoading = false }
+        
+        do {
+            guard let currentUserId = supabase.currentUser?.id else {
+                throw NSError(domain: "AuthError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
+            }
+            
+            // Use the optimized database function
+            struct FeedParams: Codable {
+                let user_uuid: String
+                let limit_count: Int
+                let offset_count: Int
+            }
+            
+            let params = FeedParams(
+                user_uuid: currentUserId.uuidString,
+                limit_count: limit,
+                offset_count: offset
+            )
+            
+            let response: [FeedMealData] = try await supabase.client.rpc(
+                "get_user_feed", 
+                params: params
+            ).execute().value
+
+            // Generate signed URLs
+            let updatedResponse = try await withThrowingTaskGroup(of: FeedMealData.self) { group in
+                for meal in response {
+                    group.addTask {
+                        var updatedMeal = meal
+                        if let storagePath = meal.photoFilePath {
+                            let signedURL = try await self.supabase.client.storage
+                                .from("meal-photos")
+                                .createSignedURL(path: storagePath, expiresIn: 3600)
+                            updatedMeal.photoFilePath = signedURL.absoluteString
+                        }
+                        return updatedMeal
+                    }
+                }
+                
+                var results: [FeedMealData] = []
+                for try await meal in group {
+                    results.append(meal)
+                }
+                return results
+            }
+            // Convert to FeedMealItem for UI
+            let feedItems = updatedResponse.map { $0.toFeedMealItem() }
+            print("feedItems: \(feedItems.first?.photoUrl)")
+            if offset == 0 {
+                self.feedMeals = feedItems
+            } else {
+                self.feedMeals.append(contentsOf: feedItems)
+            }
+            
+        } catch {
+            self.error = error
+            print("Failed to fetch feed data: \(error)")
+        }
+    }
     
     func fetchUserFeed(limit: Int = 20, offset: Int = 0) async {
         isLoading = true

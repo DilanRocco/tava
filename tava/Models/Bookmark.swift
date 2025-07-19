@@ -32,6 +32,24 @@ struct MealReaction: Codable, Identifiable, Hashable {
     }
 }
 
+struct MealComment: Codable, Identifiable, Hashable {
+    let id: UUID
+    let mealId: UUID
+    let userId: UUID
+    let content: String
+    let createdAt: Date
+    let updatedAt: Date
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case mealId = "meal_id"
+        case userId = "user_id"
+        case content
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+    }
+}
+
 enum ReactionType: String, Codable, CaseIterable {
     case like
     case love
