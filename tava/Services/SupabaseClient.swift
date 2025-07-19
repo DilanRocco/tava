@@ -33,7 +33,10 @@ class SupabaseClient: ObservableObject {
     @MainActor
     func checkAuthState() async {
         do {
+
+            
             let session = try await client.auth.session
+            print("🔑 Session: \(session)")
             let user = session.user
             // Fetch user profile from our users table
             await fetchUserProfile(userId: user.id)

@@ -114,7 +114,7 @@ struct FeedMealData: Codable, Identifiable {
     let likesCount: Int
     let commentsCount: Int
     let bookmarksCount: Int
-    var photoFilePath: String?
+    var photoUrl: String?
     
     var id: UUID { mealId }
     
@@ -134,7 +134,7 @@ struct FeedMealData: Codable, Identifiable {
         case likesCount = "likes_count"
         case commentsCount = "comments_count"
         case bookmarksCount = "bookmarks_count"
-        case photoFilePath = "primary_photo_file_path"
+        case photoUrl = "photo_url"
     }
     
     // Convert to FeedMealItem for UI
@@ -155,7 +155,7 @@ struct FeedMealData: Codable, Identifiable {
             likesCount: likesCount,
             commentsCount: commentsCount,
             bookmarksCount: bookmarksCount,
-            photoUrl: photoFilePath
+            photoUrl: photoUrl
         )
     }
 } 

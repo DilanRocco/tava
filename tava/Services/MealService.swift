@@ -15,68 +15,89 @@ class MealService: ObservableObject {
     
     // MARK: - Feed Operations
     
-    func fetchFeedData(limit: Int = 20, offset: Int = 0) async {
-        isLoading = true
-        defer { isLoading = false }
+ func fetchFeedData(limit: Int = 20, offset: Int = 0) async {
+    isLoading = true
+    defer { isLoading = false }
+    
+    do {
+        guard let currentUserId = supabase.currentUser?.id else {
+            throw NSError(domain: "AuthError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
+        }
         
-        do {
-            guard let currentUserId = supabase.currentUser?.id else {
-                throw NSError(domain: "AuthError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
-            }
-            
-            // Use the optimized database function
-            struct FeedParams: Codable {
-                let user_uuid: String
-                let limit_count: Int
-                let offset_count: Int
-            }
-            
-            let params = FeedParams(
-                user_uuid: currentUserId.uuidString,
-                limit_count: limit,
-                offset_count: offset
-            )
-            
-            let response: [FeedMealData] = try await supabase.client.rpc(
-                "get_user_feed", 
-                params: params
-            ).execute().value
+        struct FeedParams: Codable {
+            let user_uuid: String
+            let limit_count: Int
+            let offset_count: Int
+        }
+        
+        let params = FeedParams(
+            user_uuid: currentUserId.uuidString,
+            limit_count: limit,
+            offset_count: offset
+        )
+        
+        print("🔑 Calling Edge Function with params: \(params)")
+        
+        let decoder = JSONDecoder()
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ssZZZZZ"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        decoder.dateDecodingStrategy = .formatted(formatter)
+        // Call Edge Function - it returns the data directly
+        let functionResponse: [FeedMealData] = try await supabase.client.functions
+            .invoke("pull_user_feed", options: .init(body: params), decoder: decoder) 
+        print("🔑 Function Response received")
+        
+        // The response.data contains the JSON bytes
+        
 
-            // Generate signed URLs
-            let updatedResponse = try await withThrowingTaskGroup(of: FeedMealData.self) { group in
-                for meal in response {
-                    group.addTask {
-                        var updatedMeal = meal
-                        if let storagePath = meal.photoFilePath {
-                            let signedURL = try await self.supabase.client.storage
-                                .from("meal-photos")
-                                .createSignedURL(path: storagePath, expiresIn: 3600)
-                            updatedMeal.photoFilePath = signedURL.absoluteString
-                        }
-                        return updatedMeal
-                    }
-                }
-                
-                var results: [FeedMealData] = []
-                for try await meal in group {
-                    results.append(meal)
-                }
-                return results
-            }
-            // Convert to FeedMealItem for UI
-            let feedItems = updatedResponse.map { $0.toFeedMealItem() }
-            print("feedItems: \(feedItems.first?.photoUrl)")
-            if offset == 0 {
-                self.feedMeals = feedItems
-            } else {
-                self.feedMeals.append(contentsOf: feedItems)
-            }
-            
-        } catch {
-            self.error = error
-            print("Failed to fetch feed data: \(error)")
+        
+     
+        
+     
+        
+        // Convert to UI models
+        let feedItems = functionResponse.map { $0.toFeedMealItem() }
+        
+        if offset == 0 {
+            self.feedMeals = feedItems
+        } else {
+            self.feedMeals.append(contentsOf: feedItems)
+        }
+        
+    } catch {
+        self.error = error
+        print("❌ Failed to fetch feed data: \(error)")
+        
+        // Debug the actual error
+        if let data = error as? DecodingError {
+            print("❌ Decoding error details: \(data)")
         }
     }
+}
+
+private func decodeResponse(data: Data, offset: Int) throws {
+    guard !data.isEmpty else {
+        print("🔑 Empty data")
+        self.feedMeals = []
+        return
+    }
+    
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    
+    let response = try decoder.decode([FeedMealData].self, from: data)
+    print("🔑 Successfully decoded \(response.count) feed items")
+    
+    let feedMealsItems = response.map { $0.toFeedMealItem() }
+    
+    if offset == 0 {
+        self.feedMeals = feedMealsItems
+    } else {
+        self.feedMeals.append(contentsOf: feedMealsItems)
+    }
+}
     
     func fetchUserFeed(limit: Int = 20, offset: Int = 0) async {
         isLoading = true
