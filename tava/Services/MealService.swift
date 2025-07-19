@@ -130,7 +130,7 @@ class MealService: ObservableObject {
         restaurantId: UUID?,
         photos: [UIImage]
     ) async throws -> Meal {
-        
+        print("Creating meal with \(photos.count) photos 432")
         guard let currentUserId = supabase.currentUser?.id else {
             throw NSError(domain: "AuthError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
         }
@@ -154,14 +154,61 @@ class MealService: ObservableObject {
             updatedAt: Date()
         )
         
-        // Insert meal into database
-        try await supabase.client
-            .from("meals")
-            .insert([newMeal])
-            .execute()
+        // Insert meal into database with proper null handling for PostGIS
+        do {
+            // Create a PostGIS-compatible meal structure
+            struct MealInsert: Codable {
+                let id: String
+                let user_id: String
+                let restaurant_id: String?
+                let meal_type: String
+                let title: String?
+                let description: String?
+                let ingredients: String?
+                let tags: [String]
+                let privacy: String
+                let location: String? // PostGIS POINT format or nil
+                let rating: Int?
+                let cost: Decimal?
+                let eaten_at: String
+                let created_at: String
+                let updated_at: String
+            }
+            
+            let mealInsert = MealInsert(
+                id: newMeal.id.uuidString,
+                user_id: newMeal.userId.uuidString,
+                restaurant_id: newMeal.restaurantId?.uuidString,
+                meal_type: newMeal.mealType.rawValue,
+                title: newMeal.title,
+                description: newMeal.description,
+                ingredients: newMeal.ingredients,
+                tags: newMeal.tags,
+                privacy: newMeal.privacy.rawValue,
+                location: newMeal.location.map { "POINT(\($0.longitude) \($0.latitude))" },
+                rating: newMeal.rating,
+                cost: newMeal.cost,
+                eaten_at: ISO8601DateFormatter().string(from: newMeal.eatenAt),
+                created_at: ISO8601DateFormatter().string(from: newMeal.createdAt),
+                updated_at: ISO8601DateFormatter().string(from: newMeal.updatedAt)
+            )
+            
+            try await supabase.client
+                .from("meals")
+                .insert([mealInsert])
+                .execute()
+            print("Inserted meal into database")
+        } catch {
+            print("Failed to insert meal into database: \(error)")
+            throw NSError(domain: "DatabaseError", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "Failed to save meal to database",
+                NSLocalizedFailureReasonErrorKey: error.localizedDescription
+            ])
+        }
         
         // Upload photos
         for (index, image) in photos.enumerated() {
+            print("Uploading photo \(index + 1) of \(photos.count)")
             let photoUpload = PhotoUpload(
                 image: image,
                 mealId: newMeal.id,
@@ -170,48 +217,80 @@ class MealService: ObservableObject {
                 isPrimary: index == 0
             )
             
-            let photoUrl = try await supabase.uploadPhoto(image: image, path: photoUpload.storagePath)
-            
-            let photo = Photo(
-                id: UUID(),
-                mealId: newMeal.id,
-                collaborativeMealId: nil,
-                userId: currentUserId,
-                storagePath: photoUpload.storagePath,
-                url: photoUrl,
-                altText: photoUpload.altText,
-                isPrimary: photoUpload.isPrimary,
-                createdAt: Date()
-            )
-            
-            try await supabase.client
-                .from("photos")
-                .insert([photo])
-                .execute()
+            do {
+                let photoUrl = try await supabase.uploadPhoto(image: image, path: photoUpload.storagePath)
+                
+                let photo = Photo(
+                    id: UUID(),
+                    mealId: newMeal.id,
+                    collaborativeMealId: nil,
+                    userId: currentUserId,
+                    storagePath: photoUpload.storagePath,
+                    url: photoUrl,
+                    altText: photoUpload.altText,
+                    isPrimary: photoUpload.isPrimary,
+                    createdAt: Date()
+                )
+                
+                try await supabase.client
+                    .from("photos")
+                    .insert([photo])
+                    .execute()
+                print("Uploaded photo \(index + 1) of \(photos.count)")
+            } catch {
+                print("Failed to upload photo \(index + 1): \(error)")
+                // If this is the first (primary) photo, this is a critical error
+                if index == 0 {
+                    throw NSError(domain: "PhotoUploadError", code: 2, userInfo: [
+                        NSLocalizedDescriptionKey: "Failed to upload primary photo",
+                        NSLocalizedFailureReasonErrorKey: error.localizedDescription
+                    ])
+                } else {
+                    // For non-primary photos, log the error but continue
+                    print("Warning: Skipping photo \(index + 1) due to upload error")
+                    continue
+                }
+            }
         }
         
         return newMeal
     }
     
     func deleteMeal(mealId: UUID) async throws {
-        // First, delete associated photos from storage
-        let photos: [Photo] = try await supabase.client
-            .from("photos")
-            .select()
-            .eq("meal_id", value: mealId)
-            .execute()
-            .value
-        
-        for photo in photos {
-            try await supabase.deletePhoto(path: photo.storagePath)
+        do {
+            // First, delete associated photos from storage
+            let photos: [Photo] = try await supabase.client
+                .from("photos")
+                .select()
+                .eq("meal_id", value: mealId)
+                .execute()
+                .value
+            
+            for photo in photos {
+                do {
+                    try await supabase.deletePhoto(path: photo.storagePath)
+                    print("Deleted photo from storage: \(photo.storagePath)")
+                } catch {
+                    print("Warning: Failed to delete photo \(photo.storagePath): \(error)")
+                    // Continue with deletion even if photo storage cleanup fails
+                }
+            }
+            
+            // Delete the meal (cascading deletes will handle photos, reactions, etc.)
+            try await supabase.client
+                .from("meals")
+                .delete()
+                .eq("id", value: mealId)
+                .execute()
+            
+            print("Successfully deleted meal: \(mealId)")
+        } catch {
+            print("Failed to delete meal \(mealId): \(error)")
+            throw NSError(domain: "DeleteError", code: 3, userInfo: [
+                NSLocalizedDescriptionKey: "Failed to delete meal",
+                NSLocalizedFailureReasonErrorKey: error.localizedDescription
+            ])
         }
-        
-        // Delete the meal (cascading deletes will handle photos, reactions, etc.)
-        try await supabase.client
-            .from("meals")
-            .delete()
-            .eq("id", value: mealId)
-            .execute()
     }
     
     func addReaction(mealId: UUID, reactionType: ReactionType) async throws {

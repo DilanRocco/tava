@@ -111,15 +111,32 @@ class SupabaseClient: ObservableObject {
             throw NSError(domain: "ImageError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Failed to convert image to data"])
         }
         
-        try await client.storage
-            .from("meal-photos")
-            .upload(path: path, file: imageData)
-        
-        let publicURL = try client.storage
-            .from("meal-photos")
-            .getPublicURL(path: path)
-        
-        return publicURL.absoluteString
+        do {
+            try await client.storage
+                .from("meal-photos")
+                .upload(path: path, file: imageData)
+            
+            let publicURL = try client.storage
+                .from("meal-photos")
+                .getPublicURL(path: path)
+            
+            return publicURL.absoluteString
+        } catch {
+            print("Storage upload error: \(error)")
+            // Check if it's an RLS policy error
+            if let storageError = error as? StorageError,
+               storageError.message.contains("row-level security policy") {
+                throw NSError(domain: "StorageError", code: 403, userInfo: [
+                    NSLocalizedDescriptionKey: "Photo upload not authorized - storage permissions need configuration",
+                    NSLocalizedFailureReasonErrorKey: "Storage bucket RLS policies not set up properly"
+                ])
+            } else {
+                throw NSError(domain: "StorageError", code: 500, userInfo: [
+                    NSLocalizedDescriptionKey: "Failed to upload photo",
+                    NSLocalizedFailureReasonErrorKey: error.localizedDescription
+                ])
+            }
+        }
     }
     
     func deletePhoto(path: String) async throws {

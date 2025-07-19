@@ -472,7 +472,7 @@ struct AddMealView: View {
                     (locationService.location.map { LocationPoint(from: $0) })
                 
                 let costDecimal = Decimal(string: cost)
-                
+                print("Creating meal with \(selectedImages.count) photos 1")
                 _ = try await mealService.createMeal(
                     mealType: selectedMealType,
                     title: title.isEmpty ? nil : title,

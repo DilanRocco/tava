@@ -51,7 +51,7 @@ struct RestaurantSearchView: View {
                             Image(systemName: "xmark.circle.fill")
                                 .foregroundColor(.gray)
                         }
-                    }
+                        }
                 }
                 .padding()
                 .background(Color(.systemGray6))
@@ -177,22 +177,22 @@ struct RestaurantSearchRow: View {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
-                        Text(place.name)
-                            .font(.headline)
-                            .fontWeight(.medium)
-                            .foregroundColor(.primary)
-                            .multilineTextAlignment(.leading)
-                        
+                    Text(place.name)
+                        .font(.headline)
+                        .fontWeight(.medium)
+                        .foregroundColor(.primary)
+                        .multilineTextAlignment(.leading)
+                    
                         Spacer()
 
                     }
                     
                     HStack {
-                        Text(place.formattedAddress ?? "Address not available")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
+                    Text(place.formattedAddress ?? "Address not available")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
                         
                         Spacer()
                     

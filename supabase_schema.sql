@@ -369,3 +369,29 @@ CREATE TRIGGER update_meals_updated_at BEFORE UPDATE ON public.meals
 
 CREATE TRIGGER update_collaborative_meals_updated_at BEFORE UPDATE ON public.collaborative_meals
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column(); 
+
+-- Storage Configuration
+-- Note: Run these commands in the Supabase Dashboard > Storage
+
+-- 1. Create storage bucket 'meal-photos' (if not exists)
+-- INSERT INTO storage.buckets (id, name, public) 
+-- VALUES ('meal-photos', 'meal-photos', true);
+
+-- 2. Set up Row Level Security policies for storage
+-- Allow authenticated users to upload photos
+-- CREATE POLICY "Users can upload meal photos" ON storage.objects
+-- FOR INSERT WITH CHECK (
+--   bucket_id = 'meal-photos' 
+--   AND auth.uid()::text = (storage.foldername(name))[1]
+-- );
+
+-- Allow users to view all public photos
+-- CREATE POLICY "Anyone can view meal photos" ON storage.objects
+-- FOR SELECT USING (bucket_id = 'meal-photos');
+
+-- Allow users to delete their own photos
+-- CREATE POLICY "Users can delete own meal photos" ON storage.objects
+-- FOR DELETE USING (
+--   bucket_id = 'meal-photos' 
+--   AND auth.uid()::text = (storage.foldername(name))[1]
+-- ); 
