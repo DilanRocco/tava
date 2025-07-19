@@ -44,27 +44,27 @@ struct FeedView: View {
                 } else {
                     // Vertical scrolling feed
                     ScrollView(.vertical, showsIndicators: false) {
-                    LazyVStack(spacing: 0) {
-                        ForEach(Array(mealService.feedMeals.enumerated()), id: \.element.id) { index, meal in
-                            FeedItemView(
-                                meal: meal,
-                                geometry: geometry,
-                                onProfileTap: {
-                                    showingProfile = true
-                                },
-                                onCommentTap: {
-                                    selectedMealId = meal.id
-                                    showingComments = true
-                                }
-                            )
-                            .frame(width: geometry.size.width, height: geometry.size.height)
+                        LazyVStack(spacing: 0) {
+                            ForEach(Array(mealService.feedMeals.enumerated()), id: \.element.id) { index, meal in
+                                FeedItemView(
+                                    meal: meal,
+                                    geometry: geometry,
+                                    onProfileTap: {
+                                        showingProfile = true
+                                    },
+                                    onCommentTap: {
+                                        selectedMealId = meal.id
+                                        showingComments = true
+                                    }
+                                )
+                                .frame(width: geometry.size.width, height: geometry.size.height)
+                            }
                         }
                     }
-                }
-                .scrollTargetBehavior(.paging)
-                .refreshable {
-                    await mealService.fetchFeedData()
-                }
+                    .scrollTargetBehavior(.paging)
+                    .refreshable {
+                        await mealService.fetchFeedData()
+                    }
                 }
             }
         }
@@ -95,18 +95,21 @@ struct FeedItemView: View {
     @State private var isLiked = false
     @State private var isBookmarked = false
     @State private var showingShare = false
+    @State private var showHeart = false
     
     var body: some View {
         ZStack {
+            // Background layer with consistent frame
             ZStack {
-               
                 if let photoUrl = meal.photoUrl, !photoUrl.isEmpty {
                     AsyncImage(url: URL(string: photoUrl)) { image in
                         image
                             .resizable()
                             .aspectRatio(contentMode: .fill)
+                            .frame(width: geometry.size.width, height: geometry.size.height)
                             .clipped()
                     } placeholder: {
+                        // Placeholder with exact same dimensions as loaded image
                         RoundedRectangle(cornerRadius: 0)
                             .fill(
                                 LinearGradient(
@@ -118,13 +121,14 @@ struct FeedItemView: View {
                                     endPoint: .bottom
                                 )
                             )
+                            .frame(width: geometry.size.width, height: geometry.size.height)
                             .overlay(
                                 ProgressView()
                                     .tint(.white)
                             )
                     }
                 } else {
-                    // Fallback when no image
+                    // Fallback when no image - same dimensions
                     RoundedRectangle(cornerRadius: 0)
                         .fill(
                             LinearGradient(
@@ -136,6 +140,7 @@ struct FeedItemView: View {
                                 endPoint: .bottom
                             )
                         )
+                        .frame(width: geometry.size.width, height: geometry.size.height)
                         .overlay(
                             Image(systemName: "photo.fill")
                                 .font(.system(size: 60))
@@ -143,22 +148,31 @@ struct FeedItemView: View {
                         )
                 }
                 
-                // Dark overlay for text readability
+                // Dark overlay for text readability - at top
                 LinearGradient(
                     colors: [
-                        Color.clear,
-                        Color.black.opacity(0.7)
+                        Color.black.opacity(0.7),
+                        Color.clear
                     ],
                     startPoint: .top,
                     endPoint: .bottom
                 )
+                .frame(width: geometry.size.width, height: geometry.size.height)
             }
             
-            // Content overlay
-            VStack {
-                Spacer()
-                
-                HStack(alignment: .bottom) {
+            // Double-tap heart animation
+            if showHeart {
+                Image(systemName: "heart.fill")
+                    .font(.system(size: 80))
+                    .foregroundColor(.red)
+                    .scaleEffect(showHeart ? 1.5 : 0.5)
+                    .opacity(showHeart ? 0.8 : 0)
+                    .animation(.easeOut(duration: 0.8), value: showHeart)
+            }
+            
+            // Content overlay with fixed positioning
+            VStack(spacing: 0) {
+                HStack(alignment: .top, spacing: 0) {
                     // Left side - meal info
                     VStack(alignment: .leading, spacing: 12) {
                         // User info
@@ -186,7 +200,7 @@ struct FeedItemView: View {
                                     .foregroundColor(.white.opacity(0.8))
                             }
                             
-                            Spacer()
+                            Spacer(minLength: 0)
                         }
                         
                         // Meal info
@@ -196,6 +210,7 @@ struct FeedItemView: View {
                                     .font(.title2)
                                     .fontWeight(.bold)
                                     .foregroundColor(.white)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
                             
                             if let description = meal.description, !description.isEmpty {
@@ -203,22 +218,27 @@ struct FeedItemView: View {
                                     .font(.body)
                                     .foregroundColor(.white.opacity(0.9))
                                     .lineLimit(3)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
                             
                             // Tags
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 8) {
-                                    ForEach(meal.tags, id: \.self) { tag in
-                                        Text("#\(tag)")
-                                            .font(.caption)
-                                            .fontWeight(.medium)
-                                            .foregroundColor(.orange)
-                                            .padding(.horizontal, 8)
-                                            .padding(.vertical, 4)
-                                            .background(Color.black.opacity(0.3))
-                                            .cornerRadius(12)
+                            if !meal.tags.isEmpty {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 8) {
+                                        ForEach(meal.tags, id: \.self) { tag in
+                                            Text("#\(tag)")
+                                                .font(.caption)
+                                                .fontWeight(.medium)
+                                                .foregroundColor(.orange)
+                                                .padding(.horizontal, 8)
+                                                .padding(.vertical, 4)
+                                                .background(Color.black.opacity(0.3))
+                                                .cornerRadius(12)
+                                        }
                                     }
+                                    .padding(.horizontal, 0)
                                 }
+                                .frame(height: 28) // Fixed height for tags scroll view
                             }
                             
                             // Rating and time
@@ -240,33 +260,34 @@ struct FeedItemView: View {
                                     .font(.caption)
                                     .foregroundColor(.white.opacity(0.8))
                                 
-                                Spacer()
+                                Spacer(minLength: 0)
                             }
                         }
-                        
-                        Spacer()
                     }
                     .padding(.leading, 20)
-                    .padding(.bottom, 100)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     
                     // Right side - action buttons
                     VStack(spacing: 20) {
                         // Like button
                         VStack(spacing: 4) {
                             Button(action: {
-                                isLiked.toggle()
+                                withAnimation(.spring(response: 0.3)) {
+                                    isLiked.toggle()
+                                }
                             }) {
                                 Image(systemName: isLiked ? "heart.fill" : "heart")
                                     .font(.title2)
                                     .foregroundColor(isLiked ? .red : .white)
                                     .scaleEffect(isLiked ? 1.2 : 1.0)
-                                    .animation(.spring(response: 0.3), value: isLiked)
+                                    .frame(width: 24, height: 24) // Fixed frame
                             }
                             
                             Text("\(meal.likesCount + (isLiked ? 1 : 0))")
                                 .font(.caption)
                                 .fontWeight(.medium)
                                 .foregroundColor(.white)
+                                .frame(minWidth: 20)
                         }
                         
                         // Comment button
@@ -275,24 +296,28 @@ struct FeedItemView: View {
                                 Image(systemName: "message")
                                     .font(.title2)
                                     .foregroundColor(.white)
+                                    .frame(width: 24, height: 24) // Fixed frame
                             }
                             
                             Text("\(meal.commentsCount)")
                                 .font(.caption)
                                 .fontWeight(.medium)
                                 .foregroundColor(.white)
+                                .frame(minWidth: 20)
                         }
                         
                         // Bookmark button
                         VStack(spacing: 4) {
                             Button(action: {
-                                isBookmarked.toggle()
+                                withAnimation(.spring(response: 0.3)) {
+                                    isBookmarked.toggle()
+                                }
                             }) {
                                 Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
                                     .font(.title2)
                                     .foregroundColor(isBookmarked ? .orange : .white)
                                     .scaleEffect(isBookmarked ? 1.1 : 1.0)
-                                    .animation(.spring(response: 0.3), value: isBookmarked)
+                                    .frame(width: 24, height: 24) // Fixed frame
                             }
                             
                             Text("Save")
@@ -309,6 +334,7 @@ struct FeedItemView: View {
                                 Image(systemName: "square.and.arrow.up")
                                     .font(.title2)
                                     .foregroundColor(.white)
+                                    .frame(width: 24, height: 24) // Fixed frame
                             }
                             
                             Text("Share")
@@ -316,16 +342,38 @@ struct FeedItemView: View {
                                 .fontWeight(.medium)
                                 .foregroundColor(.white)
                         }
-                        
-                        Spacer()
                     }
-                    .padding(.trailing, 20)
-                    .padding(.bottom, 100)
+
+                    .frame(width: 80) // Fixed width for button column
                 }
+                .padding(.top, 20) // Add top padding instead of bottom
+                .padding(.horizontal, 0)
+                
+                Spacer() // Push content to top
             }
         }
+        .frame(width: geometry.size.width, height: geometry.size.height) // Constrain entire view
+        .clipped()
+        .onTapGesture(count: 2, perform: {
+            handleDoubleTap()
+        })
         .sheet(isPresented: $showingShare) {
             ShareSheet(activityItems: [meal.shareText])
+        }
+    }
+
+    private func handleDoubleTap() {
+        // Like the post
+        if !isLiked {
+            isLiked = true
+        }
+        
+        // Show heart animation
+        showHeart = true
+        
+        // Hide heart after 0.8 seconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            showHeart = false
         }
     }
 }
@@ -402,4 +450,4 @@ struct ShareSheet: UIViewControllerRepresentable {
     }
     
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
-} 
+}
