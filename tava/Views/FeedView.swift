@@ -630,8 +630,9 @@ struct CommentsListView: View {
                         onReply: {
                             onReply(comment.id.uuidString)
                         },
-                        onLike: {
-                            onLike(comment.id.uuidString, comment.userHasLiked)
+                        onLike: { commentId, isLiked in
+                            // CHANGED: Pass the specific comment ID and like status
+                            onLike(commentId, isLiked)
                         },
                         onLoadMoreReplies: {
                             onLoadMoreReplies(comment.id.uuidString)
@@ -731,7 +732,7 @@ struct CommentRowView: View {
     let isExpanded: Bool
     let onToggleExpand: () -> Void
     let onReply: () -> Void
-    let onLike: () -> Void
+    let onLike: (String, Bool) -> Void  // CHANGED: Now accepts commentId and isLiked parameters
     let onLoadMoreReplies: () -> Void
     
     var body: some View {
@@ -741,7 +742,10 @@ struct CommentRowView: View {
                 comment: comment,
                 isReply: false,
                 onReply: onReply,
-                onLike: onLike
+                onLike: {
+                    // CHANGED: Pass parent comment's ID and like status
+                    onLike(comment.id.uuidString, comment.userHasLiked)
+                }
             )
             
             // Replies section
@@ -775,7 +779,10 @@ struct CommentRowView: View {
                                 comment: reply,
                                 isReply: true,
                                 onReply: {},
-                                onLike: onLike
+                                onLike: {
+                                    // CHANGED: Pass the REPLY's ID and like status, not the parent's
+                                    onLike(reply.id.uuidString, reply.userHasLiked)
+                                }
                             )
                         }
                         
@@ -801,6 +808,7 @@ struct CommentRowView: View {
         }
     }
 }
+
 struct CommentItemView: View {
     let comment: Comment
     let isReply: Bool
