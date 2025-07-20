@@ -584,7 +584,7 @@ class MealService: ObservableObject {
         guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw NSError(domain: "ValidationError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Comment cannot be empty"])
         }
-        
+    
         do {
             struct AddCommentParams: Codable {
                 let target_meal_id: String
@@ -605,20 +605,12 @@ class MealService: ObservableObject {
             
             print("✅ Comment added with ID: \(response)")
             
-            // Refresh comments to get the new comment with all data
-            await fetchComments(for: mealId)
-            
-            // Find and return the newly created comment
-            if let newComment = comments.first(where: { $0.id.uuidString == response }) {
-                return newComment
-            }
-            
-            // Fallback - create a basic comment object
+            // Create the new comment object
             guard let currentUserId = supabase.currentUser?.id else {
                 throw NSError(domain: "AuthError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
             }
             
-            return Comment(
+            let newComment = Comment(
                 id: UUID(uuidString: response) ?? UUID(),
                 mealId: UUID(uuidString: mealId) ?? UUID(),
                 parentCommentId: parentCommentId != nil ? UUID(uuidString: parentCommentId!) : nil,
@@ -626,7 +618,7 @@ class MealService: ObservableObject {
                 username: "You", // Placeholder
                 displayName: nil,
                 avatarUrl: nil,
-                content: content,
+                content: content.trimmingCharacters(in: .whitespacesAndNewlines),
                 createdAt: Date(),
                 updatedAt: Date(),
                 likesCount: 0,
@@ -635,6 +627,19 @@ class MealService: ObservableObject {
                 replies: []
             )
             
+            // Simply append to the appropriate list
+            if let parentId = parentCommentId {
+                // Adding a reply - find parent and add to its replies
+                if let parentIndex = comments.firstIndex(where: { $0.id.uuidString == parentId }) {
+                    comments[parentIndex] = comments[parentIndex].withReplies(comments[parentIndex].replies + [newComment])
+                }
+            } else {
+                // Adding a parent comment - add to beginning of main list
+                comments.insert(newComment, at: comments.count)
+            }
+            
+            return newComment
+        
         } catch {
             print("❌ Failed to add comment: \(error)")
             throw NSError(domain: "CommentError", code: 2, userInfo: [

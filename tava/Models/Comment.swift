@@ -63,7 +63,7 @@ struct Comment: Identifiable {
             createdAt: createdAt,
             updatedAt: updatedAt,
             likesCount: likesCount,
-            repliesCount: repliesCount,
+            repliesCount: repliesCount+1,
             userHasLiked: userHasLiked,
             replies: newReplies
         )
