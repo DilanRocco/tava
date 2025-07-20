@@ -42,7 +42,6 @@ struct DiscoveryView: View {
                 .environmentObject(supabase)
                 .environmentObject(locationService)
                 .environmentObject(mealService)
-                .environmentObject(googlePlacesService)
         }
     }
     

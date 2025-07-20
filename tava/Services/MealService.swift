@@ -1,4 +1,5 @@
 import Foundation
+import Helpers
 import UIKit
 import CoreLocation
 
@@ -13,91 +14,94 @@ class MealService: ObservableObject {
     @Published var isLoading = false
     @Published var error: Error?
     
+    @Published var comments: [Comment] = []
+    @Published var isLoadingComments = false
+    
     // MARK: - Feed Operations
     
- func fetchFeedData(limit: Int = 20, offset: Int = 0) async {
-    isLoading = true
-    defer { isLoading = false }
+    func fetchFeedData(limit: Int = 20, offset: Int = 0) async {
+        isLoading = true
+        defer { isLoading = false }
+        
+        do {
+            guard let currentUserId = supabase.currentUser?.id else {
+                throw NSError(domain: "AuthError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
+            }
+            
+            struct FeedParams: Codable {
+                let user_uuid: String
+                let limit_count: Int
+                let offset_count: Int
+            }
+            
+            let params = FeedParams(
+                user_uuid: currentUserId.uuidString,
+                limit_count: limit,
+                offset_count: offset
+            )
+            
+            print("🔑 Calling Edge Function with params: \(params)")
+            
+            let decoder = JSONDecoder()
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ssZZZZZ"
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = TimeZone(secondsFromGMT: 0)
+            decoder.dateDecodingStrategy = .formatted(formatter)
+            // Call Edge Function - it returns the data directly
+            let functionResponse: [FeedMealData] = try await supabase.client.functions
+                .invoke("pull_user_feed", options: .init(body: params), decoder: decoder)
+            print("🔑 Function Response received")
+            
+            // The response.data contains the JSON bytes
+            
+            
+            
+            
+            
+            
+            
+            // Convert to UI models
+            let feedItems = functionResponse.map { $0.toFeedMealItem() }
+            
+            if offset == 0 {
+                self.feedMeals = feedItems
+            } else {
+                self.feedMeals.append(contentsOf: feedItems)
+            }
+            
+        } catch {
+            self.error = error
+            print("❌ Failed to fetch feed data: \(error)")
+            
+            // Debug the actual error
+            if let data = error as? DecodingError {
+                print("❌ Decoding error details: \(data)")
+            }
+        }
+    }
     
-    do {
-        guard let currentUserId = supabase.currentUser?.id else {
-            throw NSError(domain: "AuthError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
+    private func decodeResponse(data: Data, offset: Int) throws {
+        guard !data.isEmpty else {
+            print("🔑 Empty data")
+            self.feedMeals = []
+            return
         }
-        
-        struct FeedParams: Codable {
-            let user_uuid: String
-            let limit_count: Int
-            let offset_count: Int
-        }
-        
-        let params = FeedParams(
-            user_uuid: currentUserId.uuidString,
-            limit_count: limit,
-            offset_count: offset
-        )
-        
-        print("🔑 Calling Edge Function with params: \(params)")
         
         let decoder = JSONDecoder()
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ssZZZZZ"
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        decoder.dateDecodingStrategy = .formatted(formatter)
-        // Call Edge Function - it returns the data directly
-        let functionResponse: [FeedMealData] = try await supabase.client.functions
-            .invoke("pull_user_feed", options: .init(body: params), decoder: decoder) 
-        print("🔑 Function Response received")
+        decoder.dateDecodingStrategy = .iso8601
         
-        // The response.data contains the JSON bytes
+        let response = try decoder.decode([FeedMealData].self, from: data)
+        print("🔑 Successfully decoded \(response.count) feed items")
         
-
-        
-     
-        
-     
-        
-        // Convert to UI models
-        let feedItems = functionResponse.map { $0.toFeedMealItem() }
+        let feedMealsItems = response.map { $0.toFeedMealItem() }
         
         if offset == 0 {
-            self.feedMeals = feedItems
+            self.feedMeals = feedMealsItems
         } else {
-            self.feedMeals.append(contentsOf: feedItems)
-        }
-        
-    } catch {
-        self.error = error
-        print("❌ Failed to fetch feed data: \(error)")
-        
-        // Debug the actual error
-        if let data = error as? DecodingError {
-            print("❌ Decoding error details: \(data)")
+            self.feedMeals.append(contentsOf: feedMealsItems)
         }
     }
-}
-
-private func decodeResponse(data: Data, offset: Int) throws {
-    guard !data.isEmpty else {
-        print("🔑 Empty data")
-        self.feedMeals = []
-        return
-    }
-    
-    let decoder = JSONDecoder()
-    decoder.dateDecodingStrategy = .iso8601
-    
-    let response = try decoder.decode([FeedMealData].self, from: data)
-    print("🔑 Successfully decoded \(response.count) feed items")
-    
-    let feedMealsItems = response.map { $0.toFeedMealItem() }
-    
-    if offset == 0 {
-        self.feedMeals = feedMealsItems
-    } else {
-        self.feedMeals.append(contentsOf: feedMealsItems)
-    }
-}
     
     func fetchUserFeed(limit: Int = 20, offset: Int = 0) async {
         isLoading = true
@@ -436,4 +440,306 @@ private func decodeResponse(data: Data, offset: Int) throws {
         // based on the actual response structure from Supabase
         return []
     }
-} 
+    
+    // Add these models and methods to your MealService class
+    
+    // MARK: - Comment Models
+    struct CommentData: Codable, Identifiable {
+        let meal_id: String
+        let comment_id: String
+        let parent_comment_id: String?
+        let user_id: String
+        let username: String
+        let display_name: String?
+        let avatar_url: String?
+        let content: String
+        let created_at: Date
+        let updated_at: Date
+        let likes_count: Int
+        let replies_count: Int
+        let user_has_liked: Bool
+        
+        var id: String { comment_id }
+        
+        func toComment() -> Comment {
+            return Comment(
+                id: UUID(uuidString: comment_id) ?? UUID(),
+                mealId: UUID(uuidString: meal_id) ?? UUID(),
+                parentCommentId: parent_comment_id != nil ? UUID(uuidString: parent_comment_id!) : nil,
+                userId: UUID(uuidString: user_id) ?? UUID(),
+                username: username,
+                displayName: display_name,
+                avatarUrl: avatar_url,
+                content: content,
+                createdAt: created_at,
+                updatedAt: updated_at,
+                likesCount: likes_count,
+                repliesCount: replies_count,
+                userHasLiked: user_has_liked,
+                replies: []
+            )
+        }
+    }
+    
+    
+    
+    // Add these published properties to MealService
+    
+    
+    // MARK: - Comment Operations
+    
+    func fetchComments(for mealId: String, limit: Int = 20, offset: Int = 0) async {
+        isLoadingComments = true
+        defer { isLoadingComments = false }
+        
+        do {
+            struct CommentParams: Codable {
+                let target_meal_id: String
+                let parent_limit: Int
+                let parent_offset: Int
+            }
+            
+            let params = CommentParams(
+                target_meal_id: mealId,
+                parent_limit: limit,
+                parent_offset: offset
+            )
+            
+            let decoder = JSONDecoder()
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ssZZZZZ"
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = TimeZone(secondsFromGMT: 0)
+            decoder.dateDecodingStrategy = .formatted(formatter)
+            
+            print(params)
+            let response: [CommentData] = try await supabase.client.rpc(
+                "get_meal_comments",
+                params: params
+            ).execute().value
+            
+            let parentComments = response.map { commentData -> Comment in
+                let comment = commentData.toComment()
+                return comment
+            }
+            
+            if offset == 0 {
+                self.comments = parentComments
+            } else {
+                self.comments.append(contentsOf: parentComments)
+            }
+            
+        } catch {
+            self.error = error
+            print("❌ Failed to fetch comments: \(error)")
+            
+            // Let's also check what type of error this is
+            if let postgrestError = error as? PostgrestError {
+                print("❌ PostgrestError details:")
+                print("   Code: \(postgrestError.code ?? "nil")")
+                print("   Message: \(postgrestError.message)")
+                print("   Detail: \(postgrestError.detail ?? "nil")")
+                print("   Hint: \(postgrestError.hint ?? "nil")")
+            }
+        }
+    }
+    
+    func fetchReplies(for parentCommentId: String, limit: Int = 5, offset: Int = 0) async -> [Comment] {
+        do {
+            struct ReplyParams: Codable {
+                let target_parent_id: String
+                let reply_limit: Int
+                let reply_offset: Int
+            }
+            
+            let params = ReplyParams(
+                target_parent_id: parentCommentId,
+                reply_limit: limit,
+                reply_offset: offset
+            )
+            
+            let decoder = JSONDecoder()
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ssZZZZZ"
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = TimeZone(secondsFromGMT: 0)
+            decoder.dateDecodingStrategy = .formatted(formatter)
+            
+            let response: [CommentData] = try await supabase.client.rpc(
+                "get_comment_replies", // New function name
+                params: params
+            ).execute().value
+            
+            return response.map { commentData -> Comment in
+                commentData.toComment()
+            }
+            
+        } catch {
+            print("❌ Failed to fetch replies: \(error)")
+            return []
+        }
+    }
+    
+    func addComment(to mealId: String, content: String, parentCommentId: String? = nil) async throws -> Comment {
+        guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw NSError(domain: "ValidationError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Comment cannot be empty"])
+        }
+        
+        do {
+            struct AddCommentParams: Codable {
+                let target_meal_id: String
+                let comment_content: String
+                let parent_id: String?
+            }
+            
+            let params = AddCommentParams(
+                target_meal_id: mealId,
+                comment_content: content.trimmingCharacters(in: .whitespacesAndNewlines),
+                parent_id: parentCommentId
+            )
+            
+            let response: String = try await supabase.client.rpc(
+                "add_meal_comment",
+                params: params
+            ).execute().value
+            
+            print("✅ Comment added with ID: \(response)")
+            
+            // Refresh comments to get the new comment with all data
+            await fetchComments(for: mealId)
+            
+            // Find and return the newly created comment
+            if let newComment = comments.first(where: { $0.id.uuidString == response }) {
+                return newComment
+            }
+            
+            // Fallback - create a basic comment object
+            guard let currentUserId = supabase.currentUser?.id else {
+                throw NSError(domain: "AuthError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
+            }
+            
+            return Comment(
+                id: UUID(uuidString: response) ?? UUID(),
+                mealId: UUID(uuidString: mealId) ?? UUID(),
+                parentCommentId: parentCommentId != nil ? UUID(uuidString: parentCommentId!) : nil,
+                userId: currentUserId,
+                username: "You", // Placeholder
+                displayName: nil,
+                avatarUrl: nil,
+                content: content,
+                createdAt: Date(),
+                updatedAt: Date(),
+                likesCount: 0,
+                repliesCount: 0,
+                userHasLiked: false,
+                replies: []
+            )
+            
+        } catch {
+            print("❌ Failed to add comment: \(error)")
+            throw NSError(domain: "CommentError", code: 2, userInfo: [
+                NSLocalizedDescriptionKey: "Failed to add comment",
+                NSLocalizedFailureReasonErrorKey: error.localizedDescription
+            ])
+        }
+    }
+    
+    func likeComment(commentId: String) async throws {
+        guard let currentUserId = supabase.currentUser?.id else {
+            throw NSError(domain: "AuthError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
+        }
+        
+        struct CommentReaction: Codable {
+            let id: String
+            let user_id: String
+            let comment_id: String
+            let reaction_type: String
+            let created_at: String
+        }
+        
+        let reaction = CommentReaction(
+            id: UUID().uuidString,
+            user_id: currentUserId.uuidString,
+            comment_id: commentId,
+            reaction_type: "like",
+            created_at: ISO8601DateFormatter().string(from: Date())
+        )
+        
+        do {
+            try await supabase.client
+                .from("comment_reactions")
+                .upsert([reaction])
+                .execute()
+            
+            // Update local state
+            updateCommentLikeStatus(commentId: commentId, isLiked: true, increment: 1)
+            
+        } catch {
+            print("❌ Failed to like comment: \(error)")
+            throw error
+        }
+    }
+    
+    func unlikeComment(commentId: String) async throws {
+        guard let currentUserId = supabase.currentUser?.id else {
+            throw NSError(domain: "AuthError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
+        }
+        
+        do {
+            try await supabase.client
+                .from("comment_reactions")
+                .delete()
+                .eq("comment_id", value: commentId)
+                .eq("user_id", value: currentUserId)
+                .execute()
+            
+            // Update local state
+            updateCommentLikeStatus(commentId: commentId, isLiked: false, increment: -1)
+            
+        } catch {
+            print("❌ Failed to unlike comment: \(error)")
+            throw error
+        }
+    }
+    
+    func loadMoreReplies(for parentCommentIndex: Int, mealId: String) async {
+        guard parentCommentIndex < comments.count else { return }
+        
+        let parentComment = comments[parentCommentIndex]
+        let currentRepliesCount = parentComment.replies.count
+        
+        let newReplies = await fetchReplies(
+            for: parentComment.id.uuidString,
+            limit: 5,
+            offset: currentRepliesCount
+        )
+        
+        if !newReplies.isEmpty {
+            comments[parentCommentIndex].replies.append(contentsOf: newReplies)
+        }
+    }
+    
+    // MARK: - Private Helper Methods
+    
+    private func updateCommentLikeStatus(commentId: String, isLiked: Bool, increment: Int) {
+        // Update parent comments
+        if let index = comments.firstIndex(where: { $0.id.uuidString == commentId }) {
+            let updatedLikesCount = max(0, comments[index].likesCount + increment)
+            comments[index] = comments[index].withLikeStatus(isLiked: isLiked, likesCount: updatedLikesCount)
+            return
+        }
+        
+        // Update replies
+        for parentIndex in comments.indices {
+            if let replyIndex = comments[parentIndex].replies.firstIndex(where: { $0.id.uuidString == commentId }) {
+                let updatedLikesCount = max(0, comments[parentIndex].replies[replyIndex].likesCount + increment)
+                let updatedReply = comments[parentIndex].replies[replyIndex].withLikeStatus(isLiked: isLiked, likesCount: updatedLikesCount)
+                
+                var updatedReplies = comments[parentIndex].replies
+                updatedReplies[replyIndex] = updatedReply
+                comments[parentIndex] = comments[parentIndex].withReplies(updatedReplies)
+                return
+            }
+        }
+    }
+}

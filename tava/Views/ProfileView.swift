@@ -54,21 +54,32 @@ struct ProfileView: View {
             Button(action: {
                 showingEditProfile = true
             }) {
-                AsyncImage(url: URL(string: supabase.currentUser?.avatarUrl ?? "")) { image in
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                } placeholder: {
+                if let avatarUrl = supabase.currentUser?.avatarUrl, !avatarUrl.isEmpty {
+                    AsyncImage(url: URL(string: avatarUrl)) { image in
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        Image(systemName: "person.circle.fill")
+                            .resizable()
+                            .foregroundColor(.gray)
+                    }
+                    .frame(width: 100, height: 100)
+                    .clipShape(Circle())
+                    .overlay(
+                        Circle()
+                            .stroke(Color.orange, lineWidth: 2)
+                    )
+                } else {
                     Image(systemName: "person.circle.fill")
                         .resizable()
                         .foregroundColor(.gray)
+                        .frame(width: 100, height: 100)
+                        .overlay(
+                            Circle()
+                                .stroke(Color.orange, lineWidth: 2)
+                        )
                 }
-                .frame(width: 100, height: 100)
-                .clipShape(Circle())
-                .overlay(
-                    Circle()
-                        .stroke(Color.orange, lineWidth: 2)
-                )
             }
             
             // Name and username
@@ -190,7 +201,7 @@ struct ProfileView: View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 3), spacing: 2) {
             ForEach(mealService.userMeals) { meal in
                 NavigationLink(destination: MealDetailView(meal: meal)) {
-                    if let photo = meal.primaryPhoto {
+                    if let photo = meal.primaryPhoto, !photo.url.isEmpty {
                         AsyncImage(url: URL(string: photo.url)) { image in
                             image
                                 .resizable()
@@ -259,4 +270,6 @@ struct StatView: View {
         }
         .frame(maxWidth: .infinity)
     }
-} 
+}
+
+ 
