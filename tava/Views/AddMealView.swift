@@ -133,8 +133,6 @@ struct InitialView: View {
     let onTakePhoto: (UIImage) -> Void
     let onSelectDraft: (MealWithPhotos) -> Void
     @State private var showingCamera = false
-    @State private var showingPhotoPicker = false
-    @State private var selectedPhoto: PhotosPickerItem?
     @State private var isEditingDrafts = false
     @State private var deletingMealIds: Set<UUID> = []
     
@@ -147,19 +145,10 @@ struct InitialView: View {
                 Text("Capture Your Meal")
                     .font(.title2)
                     .fontWeight(.semibold)
-                VStack(spacing: 12) {
-                    Button("Take Photo") {
-                        showingCamera = true
-                    }
-                    .buttonStyle(PrimaryButtonStyle())
-                    PhotosPicker(
-                        selection: $selectedPhoto,
-                        matching: .images
-                    ) {
-                        Text("Choose from Library")
-                    }
-                    .buttonStyle(SecondaryButtonStyle())
+                Button("Take Photo") {
+                    showingCamera = true
                 }
+                .buttonStyle(PrimaryButtonStyle())
             }
             
             // Collaborative Meals Section
@@ -230,22 +219,21 @@ struct InitialView: View {
             Spacer()
         }
         .padding()
-        .sheet(isPresented: $showingCamera) {
-            CameraView { imageData in
-                if let image = UIImage(data: imageData) {
-                    onTakePhoto(image)
-                }
-            }
-        }
-        .onChange(of: selectedPhoto) { photo in
-            if let photo = photo {
-                Task {
-                    if let data = try? await photo.loadTransferable(type: Data.self),
-                       let image = UIImage(data: data) {
+        .fullScreenCover(isPresented: $showingCamera) {
+            CameraView(
+                onImageCaptured: { imageData in
+                    if let image = UIImage(data: imageData) {
                         onTakePhoto(image)
                     }
+                },
+                onMultipleImagesCaptured: { images in
+                    // Handle multiple images - we'll need to process each one
+                    // For now, let's process the first one and add a flow for the rest
+                    if let firstImage = images.first {
+                        onTakePhoto(firstImage)
+                    }
                 }
-            }
+            )
         }
     }
     
@@ -344,58 +332,60 @@ struct NextActionView: View {
             VStack(spacing: 16) {
                 Text("✅")
                     .font(.system(size: 60))
-                
                 Text("Photo Added!")
                     .font(.title2)
                     .fontWeight(.semibold)
-                
                 Text("You now have \(currentDraft.photos.count) photo\(currentDraft.photos.count == 1 ? "" : "s")")
                     .foregroundColor(.secondary)
             }
             
-            // Photo Grid Preview
-            LazyVGrid(columns: [
-                GridItem(.flexible()),
-                GridItem(.flexible()),
-                GridItem(.flexible())
-            ], spacing: 12) {
-                ForEach(currentDraft.photos.prefix(6)) { photo in
-                    if let localImageData = loadLocalImageData(fileName: photo.url),
-                    let uiImage = UIImage(data: localImageData) {
-                        Image(uiImage: uiImage)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(height: 80)
-                            .clipped()
-                            .cornerRadius(8)
-                    } else {
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.secondary.opacity(0.3))
-                            .frame(height: 80)
+            // Horizontal Photo Scroll with Plus Button
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        // Existing photos
+                        ForEach(currentDraft.photos) { photo in
+                            if let localImageData = loadLocalImageData(fileName: photo.url),
+                               let uiImage = UIImage(data: localImageData) {
+                                Image(uiImage: uiImage)
+                                    .resizable()
+                                    .aspectRatio(16/9, contentMode: .fill)
+                                    .frame(width: 67.5, height: 120) // 16:9 ratio
+                                    .clipped()
+                                    .cornerRadius(8)
+                            } else {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(Color.secondary.opacity(0.3))
+                                    .frame(width: 67.5, height: 120)
+                            }
+                        }
+                        
+                        // Plus button card
+                        Button(action: onTakeAnother) {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.secondary.opacity(0.1))
+                                .frame(width: 67.5, height: 120)
+                                .overlay(
+                                    Image(systemName: "plus")
+                                        .font(.system(size: 24))
+                                        .foregroundColor(.secondary)
+                                )
+                        }
+                        .id("plusButton")
+                    }
+                    .padding(.horizontal)
+                }
+                .onAppear {
+                    // Scroll to the end (plus button) when view appears
+                    withAnimation(.easeInOut(duration: 0.5)) {
+                        proxy.scrollTo("plusButton", anchor: .trailing)
                     }
                 }
-
-                
-                if currentDraft.photos.count > 6 {
-                    Text("+\(currentDraft.photos.count - 6)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .frame(height: 80)
-                        .frame(maxWidth: .infinity)
-                        .background(Color.secondary.opacity(0.1))
-                        .cornerRadius(8)
-                }
             }
-            .padding(.horizontal)
             
-            // Action Buttons
+            // Action Buttons (removed Take Another Photo)
             VStack(spacing: 16) {
-                Button("Take Another Photo") {
-                    onTakeAnother()
-                }
-                .buttonStyle(PrimaryButtonStyle())
-                
-                Button("Continue Later") {
+                Button("Add More Courses Later") {
                     onContinueLater()
                 }
                 .buttonStyle(SecondaryButtonStyle())
@@ -411,11 +401,12 @@ struct NextActionView: View {
         }
         .padding()
     }
+    
     private func loadLocalImageData(fileName: String) -> Data? {
         let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         let filePath = documentsDirectory.appendingPathComponent("draft_photos").appendingPathComponent(fileName)
         return try? Data(contentsOf: filePath)
-}
+    }
 }
 
 // MARK: - Meal Details View (Publishing)
