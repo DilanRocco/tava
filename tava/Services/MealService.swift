@@ -376,14 +376,34 @@ class MealService: ObservableObject {
 
     func toggleReaction(mealId: String, reactionType: ReactionType, isLiked: Bool) async throws {
         let mealId = UUID(uuidString: mealId) ?? UUID()
+        print("Toggling reaction for meal \(mealId) with type \(reactionType) and isLiked \(isLiked)")
         if isLiked {
+            print("Adding reaction for meal \(mealId) with type \(reactionType)")
             try await addReaction(mealId: mealId, reactionType: reactionType)
         } else {
             try await removeReaction(mealId: mealId)
         }
         
     }
-    
+    func addBookmark(mealId: String) async throws {
+        guard let currentUserId = supabase.currentUser?.id else {
+            throw NSError(domain: "AuthError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
+        }
+        let mealId = UUID(uuidString: mealId) ?? UUID()
+        let bookmark = Bookmark(
+            id: UUID(),
+            userId: currentUserId,
+            mealId: mealId,
+            createdAt: Date()
+        )
+        
+        try await supabase.client
+            .from("bookmarks")
+            .insert([bookmark])
+            .execute()
+        print("Bookmark added for meal \(mealId)")
+    }
+
     func addReaction(mealId: UUID, reactionType: ReactionType) async throws {
         guard let currentUserId = supabase.currentUser?.id else {
             throw NSError(domain: "AuthError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
@@ -401,6 +421,7 @@ class MealService: ObservableObject {
             .from("meal_reactions")
             .upsert([reaction])
             .execute()
+        print("Reaction added for meal \(mealId) with type \(reactionType)")
     }
     
     func removeReaction(mealId: UUID) async throws {

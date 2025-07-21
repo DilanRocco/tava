@@ -57,11 +57,18 @@ struct FeedView: View {
                                         showingProfile = true
                                     },
                                     onCommentTap: { handleComment(for: meal)},
-                                    onLikeTap: {
+                                    onLikeTap: { isLiked in
                                         Task {
-                                            try await self.handleLike(for: meal)
+                                            try await self.handleLike(for: meal, isLiked: isLiked)
                                         }
-                                    }
+                                    },
+                                    onBookmarkTap: {
+                                        Task {
+                                            try await mealService.addBookmark(mealId: meal.id)
+                                        }
+                                    },
+
+
                                 )
                                 .frame(width: geometry.size.width, height: geometry.size.height)
                             }
@@ -95,8 +102,8 @@ struct FeedView: View {
         selectedMealId = IdentifiableString(id: meal.id)
     }
 
-    private func handleLike(for meal: FeedMealItem) async throws {
-        try await mealService.toggleReaction(mealId: meal.id, reactionType: .like, isLiked: meal.userHasLiked)
+    private func handleLike(for meal: FeedMealItem, isLiked: Bool) async throws {
+        try await mealService.toggleReaction(mealId: meal.id, reactionType: .like, isLiked: isLiked)
     }
 }
 
@@ -105,12 +112,28 @@ struct FeedItemView: View {
     let geometry: GeometryProxy
     let onProfileTap: () -> Void
     let onCommentTap: () -> Void
-    let onLikeTap: () -> Void
-    
-    @State private var isLiked = false
-    @State private var isBookmarked = false
+    let onLikeTap: (Bool) -> Void
+    let onBookmarkTap: () -> Void
+
     @State private var showingShare = false
     @State private var showHeart = false
+    @State private var isBookmarked: Bool
+    @State private var isLiked: Bool
+    @State private var optimisticLikeCount: Int
+    
+    init(meal: FeedMealItem, geometry: GeometryProxy, onProfileTap: @escaping () -> Void, onCommentTap: @escaping () -> Void, onLikeTap: @escaping (Bool) -> Void, onBookmarkTap: @escaping () -> Void) {
+        self.meal = meal
+        self.geometry = geometry
+        self.onProfileTap = onProfileTap
+        self.onCommentTap = onCommentTap
+        self.onLikeTap = onLikeTap
+        self.onBookmarkTap = onBookmarkTap
+        // Initialize based on server state
+        self._isLiked = State(initialValue: meal.userHasLiked)
+        self._optimisticLikeCount = State(initialValue: meal.likesCount)
+        self._isBookmarked = State(initialValue: meal.userHasBookmarked)
+        
+    }
     
     var body: some View {
         ZStack {
@@ -287,10 +310,13 @@ struct FeedItemView: View {
                         // Like button
                         VStack(spacing: 4) {
                             Button(action: {
+                                let newLikedState = !isLiked
+                                onLikeTap(newLikedState)
+                                
                                 withAnimation(.spring(response: 0.3)) {
-                                    isLiked.toggle()
+                                    isLiked = newLikedState
+                                    optimisticLikeCount += newLikedState ? 1 : -1
                                 }
-                                onLikeTap()
                             }) {
                                 Image(systemName: isLiked ? "heart.fill" : "heart")
                                     .font(.title2)
@@ -299,7 +325,7 @@ struct FeedItemView: View {
                                     .frame(width: 24, height: 24) // Fixed frame
                             }
                             
-                            Text("\(meal.likesCount + (isLiked ? 1 : 0))")
+                            Text("\(optimisticLikeCount)")
                                 .font(.caption)
                                 .fontWeight(.medium)
                                 .foregroundColor(.white)
@@ -326,7 +352,9 @@ struct FeedItemView: View {
                         VStack(spacing: 4) {
                             Button(action: {
                                 withAnimation(.spring(response: 0.3)) {
+                                    onBookmarkTap()
                                     isBookmarked.toggle()
+
                                 }
                             }) {
                                 Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
@@ -336,7 +364,7 @@ struct FeedItemView: View {
                                     .frame(width: 24, height: 24) // Fixed frame
                             }
                             
-                            Text("Save")
+                            Text(isBookmarked ? "Saved" :"Save")
                                 .font(.caption)
                                 .fontWeight(.medium)
                                 .foregroundColor(.white)
@@ -383,7 +411,7 @@ struct FeedItemView: View {
         if !isLiked {
             isLiked = true
         }
-        onLikeTap()
+        onLikeTap(isLiked)
         
         // Show heart animation
         showHeart = true

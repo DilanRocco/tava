@@ -4,14 +4,12 @@ struct Bookmark: Codable, Identifiable, Hashable {
     let id: UUID
     let userId: UUID
     let mealId: UUID?
-    let restaurantId: UUID?
     let createdAt: Date
     
     enum CodingKeys: String, CodingKey {
         case id
         case userId = "user_id"
         case mealId = "meal_id"
-        case restaurantId = "restaurant_id"
         case createdAt = "created_at"
     }
 }
