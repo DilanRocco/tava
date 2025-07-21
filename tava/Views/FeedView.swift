@@ -310,13 +310,7 @@ struct FeedItemView: View {
                         // Like button
                         VStack(spacing: 4) {
                             Button(action: {
-                                let newLikedState = !isLiked
-                                onLikeTap(newLikedState)
-                                
-                                withAnimation(.spring(response: 0.3)) {
-                                    isLiked = newLikedState
-                                    optimisticLikeCount += newLikedState ? 1 : -1
-                                }
+                                handleLikeTap(isLiked: isLiked)
                             }) {
                                 Image(systemName: isLiked ? "heart.fill" : "heart")
                                     .font(.title2)
@@ -400,9 +394,21 @@ struct FeedItemView: View {
         .clipped()
         .onTapGesture(count: 2, perform: {
             handleDoubleTap()
+            handleLikeTap(isLiked: isLiked)
+            
         })
         .sheet(isPresented: $showingShare) {
             ShareSheet(activityItems: [meal.shareText])
+        }
+    }
+    
+    private func handleLikeTap(isLiked: Bool) {
+        let newLikedState = !isLiked
+        onLikeTap(newLikedState)
+        
+        withAnimation(.spring(response: 0.3)) {
+            self.isLiked = newLikedState
+            optimisticLikeCount += newLikedState ? 1 : -1
         }
     }
 
@@ -411,7 +417,7 @@ struct FeedItemView: View {
         if !isLiked {
             isLiked = true
         }
-        onLikeTap(isLiked)
+       
         
         // Show heart animation
         showHeart = true
