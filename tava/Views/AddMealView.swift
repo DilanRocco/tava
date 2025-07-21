@@ -132,11 +132,11 @@ struct InitialView: View {
     let draftService: DraftMealService
     let onTakePhoto: (UIImage) -> Void
     let onSelectDraft: (MealWithPhotos) -> Void
-    
     @State private var showingCamera = false
     @State private var showingPhotoPicker = false
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var isEditingDrafts = false
+    @State private var deletingMealIds: Set<UUID> = []
     
     var body: some View {
         VStack(spacing: 30) {
@@ -144,17 +144,14 @@ struct InitialView: View {
             VStack(spacing: 20) {
                 Text("📸")
                     .font(.system(size: 60))
-                
                 Text("Capture Your Meal")
                     .font(.title2)
                     .fontWeight(.semibold)
-                
                 VStack(spacing: 12) {
                     Button("Take Photo") {
                         showingCamera = true
                     }
                     .buttonStyle(PrimaryButtonStyle())
-                    
                     PhotosPicker(
                         selection: $selectedPhoto,
                         matching: .images
@@ -168,42 +165,64 @@ struct InitialView: View {
             // Collaborative Meals Section
             if !draftService.draftMeals.isEmpty {
                 Divider()
-                
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
                         Text("Continue Previous Meals")
                             .font(.headline)
                         Spacer()
-                        Button(action: { isEditingDrafts.toggle() }) {
+                        Button(action: { 
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                isEditingDrafts.toggle()
+                                if !isEditingDrafts {
+                                    deletingMealIds.removeAll()
+                                }
+                            }
+                        }) {
                             Text(isEditingDrafts ? "Done" : "Edit")
                                 .font(.subheadline)
                                 .foregroundColor(isEditingDrafts ? .red : .blue)
                         }
                     }
-                    
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 12) {
                             ForEach(draftService.draftMeals) { draft in
                                 ZStack(alignment: .topTrailing) {
                                     DraftMealThumbnail(draft: draft) {
-                                        onSelectDraft(draft)
-                                    }
-                                    if isEditingDrafts {
-                                        Button(action: {
-                                            Task {
-                                                try await draftService.deleteDraftMeal(mealId: draft.meal.id)
-                                            }
-                                        }) {
-                                            Image(systemName: "minus.circle.fill")
-                                                .foregroundColor(.red)
-                                                .background(Color.white.clipShape(Circle()))
-                                                .offset(x: 8, y: -8)
+                                        if !isEditingDrafts {
+                                            onSelectDraft(draft)
                                         }
                                     }
+                                    .opacity(isEditingDrafts ? 0.5 : 1.0)
+                                    .animation(.easeInOut(duration: 0.2), value: isEditingDrafts)
+                                    
+                                    // Delete overlay - positioned properly inside bounds
+                                    if isEditingDrafts {
+                                        Button(action: {
+                                            deleteMeal(draft)
+                                        }) {
+                                            Image(systemName: "xmark.circle.fill")
+                                                .font(.system(size: 24))
+                                                .foregroundColor(.red)
+                                                .background(
+                                                    Circle()
+                                                        .fill(Color.white)
+                                                        .frame(width: 20, height: 20)
+                                                )
+                                        }
+                                        .buttonStyle(.plain)
+                                        .offset(x: 8, y: -8) // Reduced offset to keep it visible
+                                        .transition(.scale.combined(with: .opacity))
+                                    }
                                 }
+                                .scaleEffect(deletingMealIds.contains(draft.meal.id) ? 0.8 : 1.0)
+                                .opacity(deletingMealIds.contains(draft.meal.id) ? 0.0 : 1.0)
+                                .animation(.easeInOut(duration: 0.3), value: deletingMealIds.contains(draft.meal.id))
+                                .padding(.top, 8) // Add padding to accommodate the button
+                                .padding(.trailing, 8) // Add trailing padding for the button
                             }
                         }
-                        .padding(.horizontal, 2)
+                        .padding(.horizontal, 12) // Increased horizontal padding
+                        .padding(.vertical, 4) // Add vertical padding
                     }
                 }
             }
@@ -225,6 +244,25 @@ struct InitialView: View {
                        let image = UIImage(data: data) {
                         onTakePhoto(image)
                     }
+                }
+            }
+        }
+    }
+    
+    private func deleteMeal(_ draft: MealWithPhotos) {
+        withAnimation(.easeInOut(duration: 0.3)) {
+            deletingMealIds.insert(draft.meal.id)
+        }
+        
+        // Delay the actual deletion to allow animation to complete
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            Task {
+                do {
+                    try await draftService.deleteDraftMeal(mealId: draft.meal.id)
+                    deletingMealIds.remove(draft.meal.id)
+                } catch {
+                    // Handle error and reset state
+                    deletingMealIds.remove(draft.meal.id)
                 }
             }
         }
