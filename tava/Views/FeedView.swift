@@ -56,7 +56,12 @@ struct FeedView: View {
                                     onProfileTap: {
                                         showingProfile = true
                                     },
-                                    onCommentTap: { handleComment(for: meal)}
+                                    onCommentTap: { handleComment(for: meal)},
+                                    onLikeTap: {
+                                        Task {
+                                            try await self.handleLike(for: meal)
+                                        }
+                                    }
                                 )
                                 .frame(width: geometry.size.width, height: geometry.size.height)
                             }
@@ -89,6 +94,10 @@ struct FeedView: View {
     private func handleComment(for meal: FeedMealItem) {
         selectedMealId = IdentifiableString(id: meal.id)
     }
+
+    private func handleLike(for meal: FeedMealItem) async throws {
+        try await mealService.toggleReaction(mealId: meal.id, reactionType: .like, isLiked: meal.userHasLiked)
+    }
 }
 
 struct FeedItemView: View {
@@ -96,6 +105,7 @@ struct FeedItemView: View {
     let geometry: GeometryProxy
     let onProfileTap: () -> Void
     let onCommentTap: () -> Void
+    let onLikeTap: () -> Void
     
     @State private var isLiked = false
     @State private var isBookmarked = false
@@ -280,6 +290,7 @@ struct FeedItemView: View {
                                 withAnimation(.spring(response: 0.3)) {
                                     isLiked.toggle()
                                 }
+                                onLikeTap()
                             }) {
                                 Image(systemName: isLiked ? "heart.fill" : "heart")
                                     .font(.title2)
@@ -372,10 +383,10 @@ struct FeedItemView: View {
         if !isLiked {
             isLiked = true
         }
+        onLikeTap()
         
         // Show heart animation
         showHeart = true
-        
         // Hide heart after 0.8 seconds
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
             showHeart = false
@@ -402,6 +413,8 @@ struct FeedMealItem: Identifiable {
     let commentsCount: Int
     let bookmarksCount: Int
     let photoUrl: String?
+    let userHasLiked: Bool
+    let userHasBookmarked: Bool
     
     var timeAgo: String {
         let formatter = RelativeDateTimeFormatter()

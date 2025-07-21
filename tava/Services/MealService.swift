@@ -52,15 +52,7 @@ class MealService: ObservableObject {
             let functionResponse: [FeedMealData] = try await supabase.client.functions
                 .invoke("pull_user_feed", options: .init(body: params), decoder: decoder)
             print("🔑 Function Response received")
-            
-            // The response.data contains the JSON bytes
-            
-            
-            
-            
-            
-            
-            
+
             // Convert to UI models
             let feedItems = functionResponse.map { $0.toFeedMealItem() }
             
@@ -380,6 +372,16 @@ class MealService: ObservableObject {
                 NSLocalizedFailureReasonErrorKey: error.localizedDescription
             ])
         }
+    }
+
+    func toggleReaction(mealId: String, reactionType: ReactionType, isLiked: Bool) async throws {
+        let mealId = UUID(uuidString: mealId) ?? UUID()
+        if isLiked {
+            try await addReaction(mealId: mealId, reactionType: reactionType)
+        } else {
+            try await removeReaction(mealId: mealId)
+        }
+        
     }
     
     func addReaction(mealId: UUID, reactionType: ReactionType) async throws {

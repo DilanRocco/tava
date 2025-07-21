@@ -29,7 +29,9 @@ interface FeedMealData {
   comments_count: number
   bookmarks_count: number
   primary_photo_file_path?: string
-  photo_url?: string // This will be the signed URL
+  photo_url?: string 
+  user_has_liked: boolean
+  user_has_bookmarked: boolean
 }
 
 Deno.serve(async (req) => {

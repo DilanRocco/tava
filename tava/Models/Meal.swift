@@ -115,7 +115,8 @@ struct FeedMealData: Codable, Identifiable {
     let commentsCount: Int
     let bookmarksCount: Int
     var photoUrl: String?
-    
+    let userHasLiked: Bool
+    let userHasBookmarked: Bool
     var id: UUID { mealId }
     
     enum CodingKeys: String, CodingKey {
@@ -135,6 +136,8 @@ struct FeedMealData: Codable, Identifiable {
         case commentsCount = "comments_count"
         case bookmarksCount = "bookmarks_count"
         case photoUrl = "photo_url"
+        case userHasLiked = "user_has_liked"
+        case userHasBookmarked = "user_has_bookmarked"
     }
     
     // Convert to FeedMealItem for UI
@@ -155,7 +158,9 @@ struct FeedMealData: Codable, Identifiable {
             likesCount: likesCount,
             commentsCount: commentsCount,
             bookmarksCount: bookmarksCount,
-            photoUrl: photoUrl
+            photoUrl: photoUrl,
+            userHasLiked: userHasLiked,
+            userHasBookmarked: userHasBookmarked
         )
     }
 } 
