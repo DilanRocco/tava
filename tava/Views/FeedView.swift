@@ -451,7 +451,8 @@ struct FeedMealItem: Identifiable {
     }
     
     var shareText: String {
-        let title = mealTitle ?? "meal"
+        
+        let title = mealTitle ?? "Meal"
         return "\(title) at \(location) - Check out this amazing meal on Tava!"
     }
 }

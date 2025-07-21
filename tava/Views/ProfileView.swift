@@ -200,7 +200,7 @@ struct ProfileView: View {
     private var mealsGridView: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 3), spacing: 2) {
             ForEach(mealService.userMeals) { meal in
-                NavigationLink(destination: MealDetailView(meal: meal)) {
+                NavigationLink(destination: EmptyView()) {
                     if let photo = meal.primaryPhoto, !photo.url.isEmpty {
                         AsyncImage(url: URL(string: photo.url)) { image in
                             image
@@ -253,7 +253,11 @@ struct ProfileView: View {
         .padding(.top, 60)
     }
 }
-
+struct EmptyView: View {
+    var body: some View {
+        Text("TODO")
+    }
+}
 struct StatView: View {
     let title: String
     let value: String

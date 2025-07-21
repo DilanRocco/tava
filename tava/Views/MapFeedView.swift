@@ -55,11 +55,11 @@ struct MapFeedView: View {
             .sheet(isPresented: $showFeed) {
                 MapFeedListView(meals: filteredMeals)
             }
-            .sheet(item: $selectedMeal) { meal in
-                MealDetailView(meal: meal)
-                    .environmentObject(mealService)
-                    .environmentObject(supabase)
-            }
+//            .sheet(item: $selectedMeal) { meal in
+//                MealDetailView(meal: meal)
+//                    .environmentObject(mealService)
+//                    .environmentObject(supabase)
+//            }
             .sheet(isPresented: $showProfile) {
                 ProfileView()
                     .environmentObject(supabase)

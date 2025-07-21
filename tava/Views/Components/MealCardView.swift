@@ -158,7 +158,8 @@ struct MealCardView: View {
         }
         .buttonStyle(PlainButtonStyle())
         .sheet(isPresented: $showingDetail) {
-            MealDetailView(meal: meal)
+            EmptyView()
+//            MealDetailView(meal: meal)
         }
     }
 }

@@ -30,6 +30,7 @@ struct Meal: Codable, Identifiable, Hashable {
     let privacy: MealPrivacy
     let location: LocationPoint?
     let rating: Int?
+    let status: MealStatus
     let cost: Decimal?
     let eatenAt: Date
     let createdAt: Date
@@ -53,10 +54,14 @@ struct Meal: Codable, Identifiable, Hashable {
         case location
         case rating
         case cost
+        case status
         case eatenAt = "eaten_at"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
+
+    var isDraft: Bool { status == .draft }
+    var isPublished: Bool { status == .published }
 }
 
 struct LocationPoint: Codable, Hashable {
@@ -164,3 +169,62 @@ struct FeedMealData: Codable, Identifiable {
         )
     }
 } 
+
+enum MealStatus: String, CaseIterable, Codable {
+    case draft
+    case published  
+    case archived
+    
+    var displayName: String {
+        switch self {
+        case .draft: return "Draft"
+        case .published: return "Published"
+        case .archived: return "Archived"
+        }
+    }
+}
+
+
+
+struct MealWithPhotos: Identifiable, Codable {
+    let meal: Meal
+    let photos: [Photo]
+    
+    var id: UUID { meal.id }
+    
+    var primaryPhoto: Photo? {
+        photos.first { $0.isPrimary } ?? photos.first
+    }
+    
+    var coursesSummary: String {
+        let courses = Set(photos.compactMap { $0.course })
+        if courses.isEmpty { return "No categories" }
+        return courses.map { $0.displayName }.sorted().joined(separator: ", ")
+    }
+    
+    var photoCount: Int { photos.count }
+    
+    // Convenience properties
+    var isDraft: Bool { meal.isDraft }
+    var isPublished: Bool { meal.isPublished }
+}
+
+struct MealInsert: Codable {
+    let id: String
+    let user_id: String
+    let restaurant_id: String?
+    let meal_type: String
+    let title: String?
+    let description: String?
+    let ingredients: String?
+    let tags: [String]
+    let privacy: String
+    let location: String?
+    let rating: Int?
+    let cost: Decimal?
+    let status: String
+    let eaten_at: String
+    let created_at: String
+    let updated_at: String
+    let last_activity_at: String
+}
