@@ -413,12 +413,6 @@ struct FeedItemView: View {
     }
 
     private func handleDoubleTap() {
-        // Like the post
-        if !isLiked {
-            isLiked = true
-        }
-       
-        
         // Show heart animation
         showHeart = true
         // Hide heart after 0.8 seconds
