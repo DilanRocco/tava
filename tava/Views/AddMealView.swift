@@ -7,7 +7,7 @@ struct AddMealView: View {
     @State private var currentFlow: MealFlow = .initial
     @State private var currentDraft: MealWithPhotos?
     @State private var capturedImage: UIImage?
-    
+    @Environment(\.dismiss) private var dismiss
     
     enum MealFlow {
         case initial           // Shows camera/library + collaborative meals
@@ -51,7 +51,7 @@ struct AddMealView: View {
                         },
                         onContinueLater: {
                             draftService.saveDraftMealsToLocal(draftService.draftMeals)
-                            //dismiss()
+                            dismiss()
                         },
                         onFinalize: {
                             currentFlow = .mealDetails
