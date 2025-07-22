@@ -67,6 +67,7 @@ class DraftMealService: ObservableObject {
         isLoading = false
     }
     
+
     
     
     // MARK: - Create Draft Meal
@@ -207,20 +208,11 @@ class DraftMealService: ObservableObject {
         
         // Remove from local state
         draftMeals.removeAll { $0.meal.id == mealId }
-        deleteDraftMealFromLocal(mealId: mealId)
+        
+        // Save updated drafts to local storage
+        saveDraftMealsToLocal(draftMeals)
     }
     
-    private func deleteDraftMealFromLocal(mealId: UUID) {
-        draftMeals.removeAll { $0.meal.id == mealId }
-
-        var drafts = UserDefaults.standard.object(forKey: localStorageKey) as? [MealWithPhotos] ?? []
-        print(drafts.count)
-        drafts.removeAll { $0.meal.id == mealId }
-        print(drafts.count)
-        UserDefaults.standard.set(drafts, forKey: localStorageKey)
-    }
-
-
     // MARK: - Private Helpers
     
     private func updateMealTimestamp(mealId: UUID) async throws {
@@ -357,7 +349,7 @@ class DraftMealService: ObservableObject {
             
             // Remove from drafts
             draftMeals.removeAll { $0.meal.id == mealId }
-            deleteDraftMealFromLocal(mealId: mealId)
+            saveDraftMealsToLocal(draftMeals)
         }
 }
 

@@ -81,7 +81,7 @@ class CameraViewController: UIViewController {
         libraryButton.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(libraryButton)
         
-        // Cancel button (top right to avoid flash conflict)
+        // Cancel button (top left)
         let cancelButton = UIButton(type: .system)
         cancelButton.setTitle("Cancel", for: .normal)
         cancelButton.titleLabel?.font = UIFont.systemFont(ofSize: 18, weight: .medium)
@@ -104,12 +104,13 @@ class CameraViewController: UIViewController {
         captureButton.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(captureButton)
         
-        // Flash button (top center)
+        // Flash button (top right)
         let flashButton = UIButton(type: .system)
         flashButton.setImage(UIImage(systemName: "bolt.slash"), for: .normal)
         flashButton.tintColor = .white
         flashButton.backgroundColor = UIColor.black.withAlphaComponent(0.6)
         flashButton.layer.cornerRadius = 20
+        flashButton.tag = 100 // Tag to find the button later
         flashButton.addTarget(self, action: #selector(toggleFlash), for: .touchUpInside)
         
         flashButton.translatesAutoresizingMaskIntoConstraints = false
@@ -122,8 +123,8 @@ class CameraViewController: UIViewController {
             libraryButton.widthAnchor.constraint(equalToConstant: 50),
             libraryButton.heightAnchor.constraint(equalToConstant: 50),
             
-            // Cancel button - top right
-            cancelButton.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -20),
+            // Cancel button - top left
+            cancelButton.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 20),
             cancelButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
             
             // Capture button - bottom center
@@ -132,8 +133,8 @@ class CameraViewController: UIViewController {
             captureButton.widthAnchor.constraint(equalToConstant: 70),
             captureButton.heightAnchor.constraint(equalToConstant: 70),
             
-            // Flash button - top center
-            flashButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            // Flash button - top right
+            flashButton.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -20),
             flashButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
             flashButton.widthAnchor.constraint(equalToConstant: 40),
             flashButton.heightAnchor.constraint(equalToConstant: 40)
@@ -145,19 +146,16 @@ class CameraViewController: UIViewController {
     }
 
     @objc private func toggleFlash() {
-        // Toggle flash mode
-        guard let device = AVCaptureDevice.default(for: .video), device.hasTorch else { return }
+        guard let flashButton = view.viewWithTag(100) as? UIButton else { return }
         
-        do {
-            try device.lockForConfiguration()
-            if device.torchMode == .off {
-                device.torchMode = .on
-            } else {
-                device.torchMode = .off
-            }
-            device.unlockForConfiguration()
-        } catch {
-            print("Flash toggle failed")
+        // Check current flash mode through the image picker's camera device
+        if let imagePicker = imagePicker {
+            // Toggle the camera flash mode
+            imagePicker.cameraFlashMode = imagePicker.cameraFlashMode == .off ? .on : .off
+            
+            // Update button icon based on new state
+            let iconName = imagePicker.cameraFlashMode == .on ? "bolt" : "bolt.slash"
+            flashButton.setImage(UIImage(systemName: iconName), for: .normal)
         }
     }
 

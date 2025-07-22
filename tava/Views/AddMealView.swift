@@ -7,15 +7,21 @@ struct AddMealView: View {
     @State private var currentFlow: MealFlow = .initial
     @State private var currentDraft: MealWithPhotos?
     @State private var capturedImage: UIImage?
+
+    @State private var multipleImages: [UIImage] = []
+    @State private var currentImageIndex = 0
+
+
     @Environment(\.dismiss) private var dismiss
     
     enum MealFlow {
         case initial           // Shows camera/library + collaborative meals
         case courseSelection   // After taking photo, select course
+        case multiImageCourseSelection(images: [UIImage], currentIndex: Int) // For multiple images
         case nextAction       // Take another photo, continue later, or finalize
         case mealDetails      // Final details for publishing
     }
-    
+        
     var body: some View {
         NavigationView {
             Group {
@@ -30,6 +36,11 @@ struct AddMealView: View {
                         onSelectDraft: { draft in
                             currentDraft = draft
                             currentFlow = .nextAction
+                        },
+                        onMultiplePhotos: { images in // Add this closure
+                            multipleImages = images
+                            currentImageIndex = 0
+                            currentFlow = .multiImageCourseSelection(images: images, currentIndex: 0)
                         }
                     )
                     
@@ -57,6 +68,17 @@ struct AddMealView: View {
                             currentFlow = .mealDetails
                         }
                     )
+
+                case .multiImageCourseSelection(let images, let currentIndex):
+                    MultiImageCourseSelectionView(
+                        images: images,
+                        currentIndex: currentIndex,
+                        onCourseSelected: { course in
+                            Task {
+                                await handleMultiImageWithCourse(course, at: currentIndex)
+                            }
+                        }
+    )
                     
                 case .mealDetails:
                     MealDetailsView(
@@ -74,6 +96,44 @@ struct AddMealView: View {
         }
     }
     
+    private func handleMultiImageWithCourse(_ course: Course?, at index: Int) async {
+        guard index < multipleImages.count else { return }
+        
+        do {
+            let image = multipleImages[index]
+            
+            if currentDraft == nil {
+                // Create new draft for first image
+                currentDraft = try await draftService.createDraftMeal()
+            }
+            
+            if let draft = currentDraft,
+            let imageData = image.jpegData(compressionQuality: 0.8) {
+                let _ = try await draftService.addPhoto(
+                    to: draft.meal.id,
+                    imageData: imageData,
+                    course: course
+                )
+                // Refresh the current draft
+                currentDraft = draftService.draftMeals.first { $0.meal.id == draft.meal.id }
+            }
+            
+            // Check if there are more images to process
+            let nextIndex = index + 1
+            if nextIndex < multipleImages.count {
+                currentFlow = .multiImageCourseSelection(images: multipleImages, currentIndex: nextIndex)
+            } else {
+                // All images processed, go to next action
+                currentFlow = .nextAction
+                multipleImages.removeAll()
+                currentImageIndex = 0
+            }
+            
+        } catch {
+            print("Error adding photo: \(error)")
+        }
+    }
+
     private func handlePhotoWithCourse(_ course: Course?) async {
         do {
             if let draft = currentDraft {
@@ -132,10 +192,13 @@ struct InitialView: View {
     let draftService: DraftMealService
     let onTakePhoto: (UIImage) -> Void
     let onSelectDraft: (MealWithPhotos) -> Void
+    let onMultiplePhotos: ([UIImage]) -> Void
     @State private var showingCamera = false
     @State private var isEditingDrafts = false
     @State private var deletingMealIds: Set<UUID> = []
     
+
+
     var body: some View {
         VStack(spacing: 30) {
             // Camera Section
@@ -226,13 +289,9 @@ struct InitialView: View {
                         onTakePhoto(image)
                     }
                 },
-                onMultipleImagesCaptured: { images in
-                    // Handle multiple images - we'll need to process each one
-                    // For now, let's process the first one and add a flow for the rest
-                    if let firstImage = images.first {
-                        onTakePhoto(firstImage)
-                    }
-                }
+            onMultipleImagesCaptured: { images in
+                onMultiplePhotos(images)
+            }
             )
         }
     }
@@ -253,6 +312,76 @@ struct InitialView: View {
                     deletingMealIds.remove(draft.meal.id)
                 }
             }
+        }
+    }
+}
+// MARK: - Multi Image Course Selection View
+struct MultiImageCourseSelectionView: View {
+    let images: [UIImage]
+    let currentIndex: Int
+    let onCourseSelected: (Course?) -> Void
+    
+    var body: some View {
+        VStack(spacing: 24) {
+            // Progress indicator
+            HStack {
+                Text("Image \(currentIndex + 1) of \(images.count)")
+                    .font(.headline)
+                Spacer()
+            }
+            .padding(.horizontal)
+            
+            // Photo Preview
+            Image(uiImage: images[currentIndex])
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(height: 200)
+                .clipped()
+                .cornerRadius(12)
+                .padding(.horizontal)
+            
+            // Course Selection
+            VStack(alignment: .leading, spacing: 16) {
+                Text("What course is this?")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                
+                LazyVGrid(columns: [
+                    GridItem(.flexible()),
+                    GridItem(.flexible())
+                ], spacing: 12) {
+                    ForEach(Course.allCases.prefix(8), id: \.self) { course in
+                        Button(action: {
+                            onCourseSelected(course)
+                        }) {
+                            VStack(spacing: 8) {
+                                Text(course.emoji)
+                                    .font(.title)
+                                Text(course.displayName)
+                                    .font(.caption)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(Color.secondary.opacity(0.1))
+                            .cornerRadius(12)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                
+                // Skip button
+                Button("Skip for now") {
+                    onCourseSelected(nil)
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(Color.secondary.opacity(0.2))
+                .cornerRadius(12)
+            }
+            .padding(.horizontal)
+            
+            Spacer()
         }
     }
 }
