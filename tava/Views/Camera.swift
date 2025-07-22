@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import PhotosUI
+import AVFoundation
 
 struct CameraView: UIViewControllerRepresentable {
     let onImageCaptured: (Data) -> Void
@@ -28,12 +29,12 @@ struct CameraView: UIViewControllerRepresentable {
         
         func didCaptureImage(_ imageData: Data) {
             parent.onImageCaptured(imageData)
-            parent.dismiss()
+            
         }
         
         func didSelectMultipleImages(_ images: [UIImage]) {
             parent.onMultipleImagesCaptured(images)
-            parent.dismiss()
+            
         }
         
         func didCancel() {
@@ -44,29 +45,68 @@ struct CameraView: UIViewControllerRepresentable {
 
 class CameraViewController: UIViewController {
     var coordinator: CameraView.Coordinator?
-    private var imagePicker: UIImagePickerController?
+    
+    private var captureSession: AVCaptureSession!
+    private var stillImageOutput: AVCapturePhotoOutput!
+    private var videoPreviewLayer: AVCaptureVideoPreviewLayer!
+    private var currentDevice: AVCaptureDevice!
     
     override func viewDidLoad() {
         super.viewDidLoad()
         setupCamera()
+        setupCustomControls()
+    }
+    
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        DispatchQueue.global(qos: .background).async {
+            self.captureSession?.startRunning()
+        }
+    }
+    
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        captureSession?.stopRunning()
+    }
+    
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        videoPreviewLayer?.frame = view.bounds
     }
     
     private func setupCamera() {
-        imagePicker = UIImagePickerController()
-        imagePicker?.delegate = self
-        imagePicker?.sourceType = .camera
-        imagePicker?.allowsEditing = false
-        imagePicker?.showsCameraControls = false // Hide default controls
+        captureSession = AVCaptureSession()
+        captureSession.sessionPreset = .photo
         
-        guard let imagePicker = imagePicker else { return }
+        guard let backCamera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else {
+            print("Unable to access back camera!")
+            return
+        }
         
-        addChild(imagePicker)
-        view.addSubview(imagePicker.view)
-        imagePicker.view.frame = view.bounds
-        imagePicker.didMove(toParent: self)
+        currentDevice = backCamera
         
-        // Add our custom controls
-        setupCustomControls()
+        do {
+            let input = try AVCaptureDeviceInput(device: backCamera)
+            stillImageOutput = AVCapturePhotoOutput()
+            
+            if captureSession.canAddInput(input) && captureSession.canAddOutput(stillImageOutput) {
+                captureSession.addInput(input)
+                captureSession.addOutput(stillImageOutput)
+                setupLivePreview()
+            }
+        } catch {
+            print("Error Unable to initialize back camera: \(error.localizedDescription)")
+        }
+    }
+    
+    private func setupLivePreview() {
+        videoPreviewLayer = AVCaptureVideoPreviewLayer(session: captureSession)
+        
+        videoPreviewLayer.videoGravity = .resizeAspectFill
+        videoPreviewLayer.connection?.videoOrientation = .portrait
+        videoPreviewLayer.frame = view.bounds
+        
+        view.layer.addSublayer(videoPreviewLayer)
     }
 
     private func setupCustomControls() {
@@ -110,7 +150,7 @@ class CameraViewController: UIViewController {
         flashButton.tintColor = .white
         flashButton.backgroundColor = UIColor.black.withAlphaComponent(0.6)
         flashButton.layer.cornerRadius = 20
-        flashButton.tag = 100 // Tag to find the button later
+        flashButton.tag = 100
         flashButton.addTarget(self, action: #selector(toggleFlash), for: .touchUpInside)
         
         flashButton.translatesAutoresizingMaskIntoConstraints = false
@@ -118,44 +158,54 @@ class CameraViewController: UIViewController {
         
         NSLayoutConstraint.activate([
             // Library button - bottom left
-            libraryButton.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 20),
-            libraryButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -30),
+            libraryButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            libraryButton.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -50),
             libraryButton.widthAnchor.constraint(equalToConstant: 50),
             libraryButton.heightAnchor.constraint(equalToConstant: 50),
             
             // Cancel button - top left
-            cancelButton.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 20),
-            cancelButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
+            cancelButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            cancelButton.topAnchor.constraint(equalTo: view.topAnchor, constant: 20),
             
             // Capture button - bottom center
             captureButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            captureButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -30),
+            captureButton.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -50),
             captureButton.widthAnchor.constraint(equalToConstant: 70),
             captureButton.heightAnchor.constraint(equalToConstant: 70),
             
             // Flash button - top right
-            flashButton.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -20),
-            flashButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
+            flashButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            flashButton.topAnchor.constraint(equalTo: view.topAnchor, constant: 20),
             flashButton.widthAnchor.constraint(equalToConstant: 40),
             flashButton.heightAnchor.constraint(equalToConstant: 40)
         ])
     }
 
     @objc private func capturePhoto() {
-        imagePicker?.takePicture()
+        let settings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.jpeg])
+        stillImageOutput.capturePhoto(with: settings, delegate: self)
     }
 
     @objc private func toggleFlash() {
-        guard let flashButton = view.viewWithTag(100) as? UIButton else { return }
+        guard let flashButton = view.viewWithTag(100) as? UIButton,
+              let device = currentDevice else { return }
         
-        // Check current flash mode through the image picker's camera device
-        if let imagePicker = imagePicker {
-            // Toggle the camera flash mode
-            imagePicker.cameraFlashMode = imagePicker.cameraFlashMode == .off ? .on : .off
+        do {
+            try device.lockForConfiguration()
             
-            // Update button icon based on new state
-            let iconName = imagePicker.cameraFlashMode == .on ? "bolt" : "bolt.slash"
-            flashButton.setImage(UIImage(systemName: iconName), for: .normal)
+            if device.hasTorch {
+                if device.torchMode == .off {
+                    device.torchMode = .on
+                    flashButton.setImage(UIImage(systemName: "bolt"), for: .normal)
+                } else {
+                    device.torchMode = .off
+                    flashButton.setImage(UIImage(systemName: "bolt.slash"), for: .normal)
+                }
+            }
+            
+            device.unlockForConfiguration()
+        } catch {
+            print("Torch could not be used")
         }
     }
 
@@ -165,7 +215,7 @@ class CameraViewController: UIViewController {
     
     @objc private func openLibrary() {
         var config = PHPickerConfiguration()
-        config.selectionLimit = 0 // Allow unlimited selection
+        config.selectionLimit = 0
         config.filter = .images
         
         let photoPicker = PHPickerViewController(configuration: config)
@@ -175,19 +225,10 @@ class CameraViewController: UIViewController {
     }
 }
 
-extension CameraViewController: UIImagePickerControllerDelegate, UINavigationControllerDelegate {
-    func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-        if let editedImage = info[.editedImage] as? UIImage,
-           let imageData = editedImage.jpegData(compressionQuality: 0.8) {
-            coordinator?.didCaptureImage(imageData)
-        } else if let originalImage = info[.originalImage] as? UIImage,
-                  let imageData = originalImage.jpegData(compressionQuality: 0.8) {
-            coordinator?.didCaptureImage(imageData)
-        }
-    }
-    
-    func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-        coordinator?.didCancel()
+extension CameraViewController: AVCapturePhotoCaptureDelegate {
+    func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
+        guard let imageData = photo.fileDataRepresentation() else { return }
+        coordinator?.didCaptureImage(imageData)
     }
 }
 

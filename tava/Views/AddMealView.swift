@@ -3,16 +3,34 @@ import PhotosUI
 
 // MARK: - Main Add Meal View
 struct AddMealView: View {
-    @StateObject private var draftService = DraftMealService()
+    @ObservedObject var draftService: DraftMealService
     @State private var currentFlow: MealFlow = .initial
     @State private var currentDraft: MealWithPhotos?
     @State private var capturedImage: UIImage?
 
     @State private var multipleImages: [UIImage] = []
     @State private var currentImageIndex = 0
-
-
     @Environment(\.dismiss) private var dismiss
+    let onDismiss: (() -> Void)?
+
+    init(draftService: DraftMealService, startingImages: [UIImage], onDismiss: (() -> Void)? = nil) {
+        self.draftService = draftService
+        self.onDismiss = onDismiss
+        if startingImages.count == 0 {
+            return
+        }
+        if startingImages.count == 1 {
+            capturedImage = startingImages[0]
+            currentFlow = .courseSelection
+        } else {
+            multipleImages = startingImages
+            currentImageIndex = 0
+            currentFlow = .multiImageCourseSelection(images: startingImages, currentIndex: 0)
+        }
+        
+    }
+
+    
     
     enum MealFlow {
         case initial           // Shows camera/library + collaborative meals
@@ -78,7 +96,7 @@ struct AddMealView: View {
                                 await handleMultiImageWithCourse(course, at: currentIndex)
                             }
                         }
-    )
+                )
                     
                 case .mealDetails:
                     MealDetailsView(

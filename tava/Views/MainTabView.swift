@@ -2,7 +2,11 @@ import SwiftUI
 
 struct MainTabView: View {
     @State private var selectedTab = 0
-    @State private var showAddMeal = false
+    @State private var showCameraFlow = false
+    @State private var capturedImages: [UIImage] = []
+    @State private var showingAddMeal = false
+    
+    @StateObject private var draftService = DraftMealService()
     
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -14,16 +18,42 @@ struct MainTabView: View {
                     .tag(1)
                 MapFeedView()
                     .tag(2)
-                
             }
             .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
             
             // Custom Tab Bar
-            CustomTabBar(selectedTab: $selectedTab, showAddMeal: $showAddMeal)
+            CustomTabBar(
+                selectedTab: $selectedTab,
+                showAddMeal: .constant(false),
+                showCamera: $showCameraFlow
+            )
         }
         .ignoresSafeArea(.container, edges: .bottom)
-        .sheet(isPresented: $showAddMeal) {
-            AddMealView()
+        .fullScreenCover(isPresented: $showCameraFlow) {
+            if !draftService.draftMeals.isEmpty {
+                AddMealView(
+                    draftService: draftService,
+                    startingImages: capturedImages,
+                    onDismiss: {
+                        showCameraFlow = false
+                        showingAddMeal = false
+                        capturedImages = []
+                    }
+                )
+            } else {
+                CameraView(
+                    onImageCaptured: { imageData in
+                        if let image = UIImage(data: imageData) {
+                            capturedImages = [image]
+                            showingAddMeal = true
+                        }
+                    },
+                    onMultipleImagesCaptured: { images in
+                        capturedImages = images
+                        showingAddMeal = true
+                    }
+                )
+            }
         }
     }
 }
@@ -31,7 +61,8 @@ struct MainTabView: View {
 struct CustomTabBar: View {
     @Binding var selectedTab: Int
     @Binding var showAddMeal: Bool
-    
+    @Binding var showCamera: Bool
+
     var body: some View {
         HStack(spacing: 0) {
             // Home Tab
@@ -68,7 +99,12 @@ struct CustomTabBar: View {
             
             // Plus Tab (Floating)
             Button(action: {
-                showAddMeal = true
+                if true {
+                    showCamera = true
+                } else {
+                    showAddMeal = true
+                }
+                
             }) {
                 ZStack {
                     Circle()

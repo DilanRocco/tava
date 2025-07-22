@@ -23,9 +23,7 @@ class DraftMealService: ObservableObject {
     }
     
     init() {
-        Task {
-            await loadDraftMeals()
-        }
+        loadDraftMeals()
     }
     
     private func saveImageLocally(_ imageData: Data) -> String? {
@@ -55,12 +53,13 @@ class DraftMealService: ObservableObject {
     }
     // MARK: - Load Draft Meals
     
-    func loadDraftMeals() async {
+    func loadDraftMeals() {
         isLoading = true
         error = nil
         
         let localDrafts = loadDraftMealsFromLocal()
         draftMeals = localDrafts
+        print("draftMeals.count: \(draftMeals.count)")
             
 
         
