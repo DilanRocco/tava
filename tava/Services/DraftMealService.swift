@@ -79,7 +79,7 @@ class DraftMealService: ObservableObject {
     let newMeal = Meal(
         id: UUID(),
         userId: userId,
-        restaurantId: nil,
+        restaurant: nil,
         mealType: .homemade,
         title: nil,
         description: nil,
@@ -235,6 +235,7 @@ class DraftMealService: ObservableObject {
     }
     
     private func loadDraftMealsFromLocal() -> [MealWithPhotos] {
+        UserDefaults.standard.removeObject(forKey: "draft_meals")
         guard let data = UserDefaults.standard.data(forKey: localStorageKey) else {
             return []
         }
@@ -250,50 +251,33 @@ class DraftMealService: ObservableObject {
     
     
         
-        func publishEntireMeal(mealId: UUID, title: String?, description: String?, privacy: MealPrivacy = .public) async throws {
-            guard let mealIndex = draftMeals.firstIndex(where: { $0.meal.id == mealId }) else {
+        func publishEntireMeal(meal: Meal) async throws {
+            guard let mealIndex = draftMeals.firstIndex(where: { $0.meal.id == meal.id }) else {
                 throw DraftMealError.invalidData
             }
             
             let draftMeal = draftMeals[mealIndex]
             
             // First, create the meal in the database
-            let newMeal = Meal(
-                id: draftMeal.meal.id,
-                userId: draftMeal.meal.userId,
-                restaurantId: draftMeal.meal.restaurantId,
-                mealType: draftMeal.meal.mealType,
-                title: title,
-                description: description,
-                ingredients: draftMeal.meal.ingredients,
-                tags: draftMeal.meal.tags,
-                privacy: privacy,
-                location: draftMeal.meal.location,
-                rating: draftMeal.meal.rating,
-                status: .published,
-                cost: draftMeal.meal.cost,
-                eatenAt: draftMeal.meal.eatenAt,
-                createdAt: draftMeal.meal.createdAt,
-                updatedAt: Date()
-            )
             
+            print("meal.id: \(meal.id)")
             let mealInsert = MealInsert(
-                id: newMeal.id.uuidString,
-                user_id: newMeal.userId.uuidString,
-                restaurant_id: nil,
-                meal_type: newMeal.mealType.rawValue,
-                title: title,
-                description: description,
-                ingredients: nil,
-                tags: [],
-                privacy: privacy.rawValue,
+                id: meal.id.uuidString,
+                user_id: meal.userId.uuidString,
+                restaurant_id: meal.restaurant?.id.uuidString,
+                meal_type: meal.mealType.rawValue,
+                title: meal.title,
+                description: meal.description,
+                ingredients: meal.ingredients,
+                tags: meal.tags,
+                privacy: meal.privacy.rawValue,
                 location: nil,
-                rating: nil,
-                cost: nil,
+                rating: meal.rating,
+                cost: meal.cost,
                 status: MealStatus.published.rawValue,
-                eaten_at: ISO8601DateFormatter().string(from: newMeal.eatenAt),
-                created_at: ISO8601DateFormatter().string(from: newMeal.createdAt),
-                updated_at: ISO8601DateFormatter().string(from: newMeal.updatedAt),
+                eaten_at: ISO8601DateFormatter().string(from: meal.eatenAt),
+                created_at: ISO8601DateFormatter().string(from: meal.createdAt),
+                updated_at: ISO8601DateFormatter().string(from: meal.updatedAt),
                 last_activity_at: ISO8601DateFormatter().string(from: Date())
             )
             
@@ -311,7 +295,7 @@ class DraftMealService: ObservableObject {
                 }
                 
                 // Upload to Supabase storage
-                let fileName = "\(mealId.uuidString)/\(UUID().uuidString).jpg"
+                let fileName = "\(meal.id.uuidString)/\(UUID().uuidString).jpg"
                 let filePath = "meal-photos/\(fileName)"
                 
                 try await supabase.storage
@@ -326,9 +310,9 @@ class DraftMealService: ObservableObject {
                 // Create photo record in database
                 let photoInsert = PhotoInsert(
                     id: localPhoto.id.uuidString,
-                    meal_id: mealId.uuidString,
+                    meal_id: meal.id.uuidString,
                     collaborative_meal_id: nil,
-                    user_id: newMeal.userId.uuidString,
+                    user_id: meal.userId.uuidString,
                     storage_path: filePath,
                     url: publicURL.absoluteString,
                     alt_text: nil,
@@ -347,7 +331,7 @@ class DraftMealService: ObservableObject {
             }
             
             // Remove from drafts
-            draftMeals.removeAll { $0.meal.id == mealId }
+            draftMeals.removeAll { $0.meal.id == meal.id }
             saveDraftMealsToLocal(draftMeals)
         }
 }

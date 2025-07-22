@@ -3,32 +3,46 @@ import PhotosUI
 
 // MARK: - Main Add Meal View
 struct AddMealView: View {
-    @ObservedObject var draftService: DraftMealService
+    
     @State private var currentFlow: MealFlow = .initial
     @State private var currentDraft: MealWithPhotos?
     @State private var capturedImage: UIImage?
 
     @State private var multipleImages: [UIImage] = []
     @State private var currentImageIndex = 0
+    @EnvironmentObject private var draftService: DraftMealService
     @Environment(\.dismiss) private var dismiss
     let onDismiss: (() -> Void)?
 
-    init(draftService: DraftMealService, startingImages: [UIImage], onDismiss: (() -> Void)? = nil) {
-        self.draftService = draftService
-        self.onDismiss = onDismiss
-        if startingImages.count == 0 {
-            return
-        }
-        if startingImages.count == 1 {
-            capturedImage = startingImages[0]
-            currentFlow = .courseSelection
-        } else {
-            multipleImages = startingImages
-            currentImageIndex = 0
-            currentFlow = .multiImageCourseSelection(images: startingImages, currentIndex: 0)
-        }
-        
+init(startingImages: [UIImage], onDismiss: (() -> Void)? = nil, stage: MealFlow? = .initial) {
+    self.onDismiss = onDismiss
+    print("startingImages: \(startingImages)")
+    
+    if startingImages.count == 0 {
+        // Initialize with default values
+        _currentFlow = State(initialValue: .initial)
+        _capturedImage = State(initialValue: nil)
+        _multipleImages = State(initialValue: [])
+        _currentImageIndex = State(initialValue: 0)
+        return
     }
+    
+    if startingImages.count == 1 {
+        print("startingImages: \(startingImages)")
+        print("Setting up single image flow")
+        // Use the State wrapper initializer
+        _capturedImage = State(initialValue: startingImages[0])
+        _currentFlow = State(initialValue: .courseSelection)
+        _multipleImages = State(initialValue: [])
+        _currentImageIndex = State(initialValue: 0)
+    } else {
+        // Use the State wrapper initializer for multiple images
+        _multipleImages = State(initialValue: startingImages)
+        _currentImageIndex = State(initialValue: 0)
+        _currentFlow = State(initialValue: .multiImageCourseSelection(images: startingImages, currentIndex: 0))
+        _capturedImage = State(initialValue: nil)
+    }
+}
 
     
     
@@ -48,6 +62,7 @@ struct AddMealView: View {
                     InitialView(
                         draftService: draftService,
                         onTakePhoto: { image in
+                            print("onTakePhoto")
                             capturedImage = image
                             currentFlow = .courseSelection
                         },
@@ -101,9 +116,9 @@ struct AddMealView: View {
                 case .mealDetails:
                     MealDetailsView(
                         currentDraft: currentDraft!,
-                        onPublish: { title, description, privacy in
+                        onPublish: { meal in
                             Task {
-                                await publishMeal(title: title, description: description, privacy: privacy)
+                                await publishMeal(meal: meal)
                             }
                         }
                     )
@@ -188,15 +203,12 @@ struct AddMealView: View {
         }
     }
     
-    private func publishMeal(title: String?, description: String?, privacy: MealPrivacy) async {
-        guard let draft = currentDraft else { return }
-        
+    private func publishMeal(meal: Meal) async {
+       
+
         do {
             try await draftService.publishEntireMeal(
-                mealId: draft.meal.id,
-                title: title,
-                description: description,
-                privacy: privacy
+                meal: meal
             )
             // dismiss()
         } catch {
@@ -304,12 +316,14 @@ struct InitialView: View {
             CameraView(
                 onImageCaptured: { imageData in
                     if let image = UIImage(data: imageData) {
+                        showingCamera = false  // Add this line
                         onTakePhoto(image)
                     }
                 },
-            onMultipleImagesCaptured: { images in
-                onMultiplePhotos(images)
-            }
+                onMultipleImagesCaptured: { images in
+                    showingCamera = false  // Add this line
+                    onMultiplePhotos(images)
+                }
             )
         }
     }
@@ -559,18 +573,44 @@ struct NextActionView: View {
 // MARK: - Meal Details View (Publishing)
 struct MealDetailsView: View {
     let currentDraft: MealWithPhotos
-    let onPublish: (String?, String?, MealPrivacy) -> Void
+    let onPublish: (Meal) -> Void  // Changed to take complete data
     
-    @State private var title = ""
-    @State private var description = ""
-    @State private var privacy: MealPrivacy = .public
+    // Initialize state from currentDraft
+    @State private var title: String
+    @State private var description: String
+    @State private var privacy: MealPrivacy
+    @State private var selectedMealType: MealType
+    @State private var selectedRestaurant: Restaurant?
+    @State private var showingRestaurantSearch = false
+    @State private var rating: Int
+    @State private var ingredients: String
+    @State private var newTag: String = ""
+    @State private var tags: [String]
     
+    @Environment(\.dismiss) private var dismiss
+    
+    // Custom initializer to set initial state
+    init(currentDraft: MealWithPhotos, onPublish: @escaping (Meal) -> Void) {
+        self.currentDraft = currentDraft
+        self.onPublish = onPublish
+        
+        // Initialize state from currentDraft.meal
+        _title = State(initialValue: currentDraft.meal.title ?? "")
+        _description = State(initialValue: currentDraft.meal.description ?? "")
+        _privacy = State(initialValue: currentDraft.meal.privacy)
+        _selectedMealType = State(initialValue: currentDraft.meal.mealType)
+        _selectedRestaurant = State(initialValue: currentDraft.meal.restaurant)
+        _rating = State(initialValue: currentDraft.meal.rating ?? 0)
+        _ingredients = State(initialValue: currentDraft.meal.ingredients ?? "")
+        _tags = State(initialValue: currentDraft.meal.tags ?? [])
+    }
+
+
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
                 // Photos Preview
-                Text("Ready to share \(currentDraft.photos.count) photos")
-                    .font(.headline)
+                photosPreviewSection
                 
                 // Form Fields
                 VStack(alignment: .leading, spacing: 16) {
@@ -591,33 +631,177 @@ struct MealDetailsView: View {
                             .lineLimit(3...6)
                     }
                     
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Privacy")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                        // Picker("Privacy", selection: $privacy) {
-                        //     ForEach(MealPrivacy.allCases, id: \.self) { privacy in
-                        //         Text(privacy.displayName).tag(privacy)
-                        //     }
-                        // }
-                        // .pickerStyle(.segmented)
+
                     }
+                mealTypeSection
+
+                if selectedMealType == .restaurant {
+                    restaurantSection
                 }
+                
+                mealDetailsSection
+
+                tagsSection
                 
                 // Publish Button
                 Button("Publish Meal") {
-                    onPublish(
-                        title.isEmpty ? nil : title,
-                        description.isEmpty ? nil : description,
-                        privacy
+                    let updatedMeal = currentDraft.updating(
+                        title: title,
+                        description: description,
+                        privacy: privacy,
+                        mealType: selectedMealType,
+                        restaurant: selectedRestaurant,
+                        rating: rating,
+                        ingredients: ingredients,
+                        tags: tags
                     )
+                    onPublish(updatedMeal.meal)
                 }
                 .buttonStyle(PrimaryButtonStyle())
             }
             .padding()
         }
     }
+
+        private var photosPreviewSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Your Photos (\(currentDraft.photos.count))")
+                .font(.headline)
+            
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(currentDraft.photos) { photo in
+                        if let localImageData = loadLocalImageData(fileName: photo.url),
+                           let uiImage = UIImage(data: localImageData) {
+                            Image(uiImage: uiImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 90, height: 120) // 4:3 ratio for better visibility
+                                .clipped()
+                                .cornerRadius(8)
+                        } else {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.secondary.opacity(0.3))
+                                .frame(width: 90, height: 120)
+                        }
+                    }
+                }
+                .padding(.horizontal, 2)
+            }
+        }
+    }
+    private func loadLocalImageData(fileName: String) -> Data? {
+        let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let filePath = documentsDirectory.appendingPathComponent("draft_photos").appendingPathComponent(fileName)
+        return try? Data(contentsOf: filePath)
+    }
+    private var mealDetailsSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Details")
+                .font(.headline)
+            
+            VStack(spacing: 12) {                
+                if selectedMealType == .restaurant {
+                    HStack {
+                        Text("Rating")
+                        Spacer()
+                        StarRatingView(rating: $rating)
+                    }
+                 }
+                 
+                 if selectedMealType == .homemade {
+                     TextField("Ingredients (optional)", text: $ingredients, axis: .vertical)
+                         .textFieldStyle(.roundedBorder)
+                         .lineLimit(2...4)
+                 }
+            }
+        }
+    }
+    
+    private func addTag() {
+        let trimmedTag = newTag.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedTag.isEmpty && !tags.contains(trimmedTag) {
+            tags.append(trimmedTag)
+            newTag = ""
+        }
+    }
+    
+    private var tagsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Tags")
+                .font(.headline)
+            
+            HStack {
+                TextField("Add tag", text: $newTag)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit {
+                        addTag()
+                    }
+                
+                Button("Add", action: addTag)
+                    .disabled(newTag.isEmpty)
+            }
+            
+            if !tags.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack {
+                        ForEach(tags, id: \.self) { tag in
+                            TagView(tag: tag) {
+                                tags.removeAll { $0 == tag }
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 2)
+                }
+            }
+        }
+    }
+
+    private var mealTypeSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Meal Type")
+                .font(.headline)
+            
+            Picker("Meal Type", selection: $selectedMealType) {
+                ForEach(MealType.allCases, id: \.self) { type in
+                    Text(type.rawValue.capitalized)
+                        .tag(type)
+                }
+            }
+            .pickerStyle(.segmented)
+        }
+    }
+
+        private var restaurantSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Restaurant")
+                .font(.headline)
+            
+            if let restaurant = selectedRestaurant {
+                RestaurantCardView(restaurant: restaurant) {
+                    selectedRestaurant = nil
+                }
+            } else {
+                Button(action: {
+                    showingRestaurantSearch = true
+                }) {
+                    HStack {
+                        Image(systemName: "magnifyingglass")
+                        Text("Search for restaurant")
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                    }
+                    .foregroundColor(.gray)
+                    .padding()
+                    .background(Color(.systemGray6))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+            }
+        }
+    }
+    
 }
+
 
 // MARK: - Supporting Views
 struct DraftMealThumbnail: View {
@@ -701,5 +885,43 @@ struct AccentButtonStyle: ButtonStyle {
             .foregroundColor(.white)
             .cornerRadius(12)
             .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
+    }
+}
+struct TagView: View {
+    let tag: String
+    let onDelete: () -> Void
+    
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(tag)
+                .font(.caption)
+            
+            Button(action: onDelete) {
+                Image(systemName: "xmark")
+                    .font(.caption2)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color.orange.opacity(0.2))
+        .foregroundColor(.orange)
+        .clipShape(Capsule())
+    }
+}
+
+struct StarRatingView: View {
+    @Binding var rating: Int
+    
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(1...5, id: \.self) { star in
+                Button(action: {
+                    rating = star
+                }) {
+                    Image(systemName: star <= rating ? "star.fill" : "star")
+                        .foregroundColor(star <= rating ? .yellow : .gray)
+                }
+            }
+        }
     }
 }

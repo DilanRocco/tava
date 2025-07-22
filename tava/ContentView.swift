@@ -9,6 +9,8 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var supabase = SupabaseClient.shared
+    @StateObject private var draftMealService = DraftMealService()
+
     
     var body: some View {
         Group {
@@ -20,6 +22,7 @@ struct ContentView: View {
         }
         .preferredColorScheme(.dark)
         .environmentObject(supabase)
+        .environmentObject(draftMealService)
     }
         
 }

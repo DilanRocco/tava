@@ -1,12 +1,18 @@
 import SwiftUI
 
+import SwiftUI
+
 struct MainTabView: View {
+    @StateObject var draftMealService: DraftMealService = DraftMealService()
     @State private var selectedTab = 0
     @State private var showCameraFlow = false
+    @State private var cameraFlowState: CameraFlowState = .camera
     @State private var capturedImages: [UIImage] = []
-    @State private var showingAddMeal = false
     
-    @StateObject private var draftService = DraftMealService()
+    enum CameraFlowState {
+        case camera
+        case addMeal
+    }
     
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -30,33 +36,59 @@ struct MainTabView: View {
         }
         .ignoresSafeArea(.container, edges: .bottom)
         .fullScreenCover(isPresented: $showCameraFlow) {
-            if !draftService.draftMeals.isEmpty {
-                AddMealView(
-                    draftService: draftService,
-                    startingImages: capturedImages,
-                    onDismiss: {
-                        showCameraFlow = false
-                        showingAddMeal = false
-                        capturedImages = []
-                    }
-                )
-            } else {
-                CameraView(
-                    onImageCaptured: { imageData in
-                        if let image = UIImage(data: imageData) {
-                            capturedImages = [image]
-                            showingAddMeal = true
-                        }
-                    },
-                    onMultipleImagesCaptured: { images in
-                        capturedImages = images
-                        showingAddMeal = true
-                    }
-                )
-            }
+            CameraFlowView(
+                flowState: $cameraFlowState,
+                capturedImages: $capturedImages,
+                draftMealService: draftMealService,
+                onComplete: {
+                    showCameraFlow = false
+                    cameraFlowState = .camera
+                    capturedImages = []
+                }
+            )
         }
     }
 }
+
+struct CameraFlowView: View {
+    @Binding var flowState: MainTabView.CameraFlowState
+    @Binding var capturedImages: [UIImage]
+    @ObservedObject var draftMealService: DraftMealService
+    let onComplete: () -> Void
+    var addedMultipleImages = false
+    var body: some View {
+        // Check if there are drafts when the view appears
+        if draftMealService.draftMeals.count > 0 && flowState == .camera {
+            AddMealView(
+                startingImages: capturedImages,
+                onDismiss: onComplete
+            )
+        } else if flowState == .camera {
+            CameraView(
+                onImageCaptured: { imageData in
+                    if let image = UIImage(data: imageData) {
+                        capturedImages = [image]
+                        flowState = .addMeal
+                        // self.addedMultipleImages = false
+                    }
+                },
+                onMultipleImagesCaptured: { images in
+                    // self.addedMultipleImages = true
+                    capturedImages = images
+                    flowState = .addMeal
+                }
+            )
+        } else {
+            
+            AddMealView(
+                startingImages: capturedImages,
+                onDismiss: onComplete,
+                stage: addedMultipleImages ? .multiImageCourseSelection(images: capturedImages, currentIndex: 0) : .courseSelection
+            )
+        }
+    }
+}
+
 
 struct CustomTabBar: View {
     @Binding var selectedTab: Int

@@ -28,6 +28,7 @@ struct CameraView: UIViewControllerRepresentable {
         }
         
         func didCaptureImage(_ imageData: Data) {
+            print("didCaptureImage")
             parent.onImageCaptured(imageData)
             
         }

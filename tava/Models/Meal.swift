@@ -21,7 +21,7 @@ enum CollaborationStatus: String, Codable, CaseIterable {
 struct Meal: Codable, Identifiable, Hashable {
     let id: UUID
     let userId: UUID
-    let restaurantId: UUID?
+    let restaurant: Restaurant?
     let mealType: MealType
     let title: String?
     let description: String?
@@ -41,24 +41,7 @@ struct Meal: Codable, Identifiable, Hashable {
         return title ?? (mealType == .homemade ? "Homemade Meal" : "Restaurant Meal")
     }
     
-    enum CodingKeys: String, CodingKey {
-        case id
-        case userId = "user_id"
-        case restaurantId = "restaurant_id"
-        case mealType = "meal_type"
-        case title
-        case description
-        case ingredients
-        case tags
-        case privacy
-        case location
-        case rating
-        case cost
-        case status
-        case eatenAt = "eaten_at"
-        case createdAt = "created_at"
-        case updatedAt = "updated_at"
-    }
+
 
     var isDraft: Bool { status == .draft }
     var isPublished: Bool { status == .published }
@@ -207,6 +190,8 @@ struct MealWithPhotos: Identifiable, Codable {
     // Convenience properties
     var isDraft: Bool { meal.isDraft }
     var isPublished: Bool { meal.isPublished }
+
+    
 }
 
 struct MealInsert: Codable {
@@ -227,4 +212,40 @@ struct MealInsert: Codable {
     let created_at: String
     let updated_at: String
     let last_activity_at: String
+}
+
+
+extension MealWithPhotos {
+    func updating(
+        title: String? = nil,
+        description: String? = nil,
+        privacy: MealPrivacy? = nil,
+        mealType: MealType? = nil,
+        restaurant: Restaurant?? = nil, // Double optional to allow setting to nil
+        rating: Int? = nil,
+        ingredients: String? = nil,
+        tags: [String]? = nil
+    ) -> MealWithPhotos {
+        let updatedMeal = Meal(
+            id: meal.id,
+            userId: meal.userId,
+            restaurant: restaurant ?? meal.restaurant,
+            mealType: mealType ?? meal.mealType,
+            title: title ?? meal.title,
+            description: description ?? meal.description,
+            ingredients: ingredients ?? meal.ingredients,
+            tags: tags ?? meal.tags,
+            privacy: privacy ?? meal.privacy,
+            location: meal.location,
+            rating: rating ?? meal.rating,
+            status: meal.status,
+            cost: meal.cost,
+            eatenAt: meal.eatenAt,
+            createdAt: meal.createdAt,
+            updatedAt: Date()
+
+        )
+
+        return MealWithPhotos(meal: updatedMeal, photos: photos)
+    }
 }
