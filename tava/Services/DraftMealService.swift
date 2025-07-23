@@ -235,7 +235,6 @@ class DraftMealService: ObservableObject {
     }
     
     private func loadDraftMealsFromLocal() -> [MealWithPhotos] {
-        UserDefaults.standard.removeObject(forKey: "draft_meals")
         guard let data = UserDefaults.standard.data(forKey: localStorageKey) else {
             return []
         }

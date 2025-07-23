@@ -52,80 +52,104 @@ init(startingImages: [UIImage], onDismiss: (() -> Void)? = nil, stage: MealFlow?
         case multiImageCourseSelection(images: [UIImage], currentIndex: Int) // For multiple images
         case nextAction       // Take another photo, continue later, or finalize
         case mealDetails      // Final details for publishing
+        case showCamera // <-- Add this
     }
         
     var body: some View {
-        NavigationView {
-            Group {
-                switch currentFlow {
-                case .initial:
-                    InitialView(
-                        draftService: draftService,
-                        onTakePhoto: { image in
-                            print("onTakePhoto")
-                            capturedImage = image
-                            currentFlow = .courseSelection
-                        },
-                        onSelectDraft: { draft in
-                            currentDraft = draft
-                            currentFlow = .nextAction
-                        },
-                        onMultiplePhotos: { images in // Add this closure
-                            multipleImages = images
-                            currentImageIndex = 0
-                            currentFlow = .multiImageCourseSelection(images: images, currentIndex: 0)
-                        }
-                    )
-                    
-                case .courseSelection:
-                    CourseSelectionView(
-                        capturedImage: capturedImage!,
-                        onCourseSelected: { course in
-                            Task {
-                                await handlePhotoWithCourse(course)
-                            }
-                        }
-                    )
-                    
-                case .nextAction:
-                    NextActionView(
-                        currentDraft: currentDraft!,
-                        onTakeAnother: {
-                            currentFlow = .initial
-                        },
-                        onContinueLater: {
-                            draftService.saveDraftMealsToLocal(draftService.draftMeals)
-                            dismiss()
-                        },
-                        onFinalize: {
-                            currentFlow = .mealDetails
-                        }
-                    )
-
-                case .multiImageCourseSelection(let images, let currentIndex):
-                    MultiImageCourseSelectionView(
-                        images: images,
-                        currentIndex: currentIndex,
-                        onCourseSelected: { course in
-                            Task {
-                                await handleMultiImageWithCourse(course, at: currentIndex)
-                            }
-                        }
-                )
-                    
-                case .mealDetails:
-                    MealDetailsView(
-                        currentDraft: currentDraft!,
-                        onPublish: { meal in
-                            Task {
-                                await publishMeal(meal: meal)
-                            }
-                        }
-                    )
+        if currentFlow == .showCamera {
+            CameraView(
+                onImageCaptured: { imageData in
+                    if let image = UIImage(data: imageData) {
+                        capturedImage = image
+                        currentFlow = .courseSelection
+                    }
+                },
+                onMultipleImagesCaptured: { images in
+                    multipleImages = images
+                    currentImageIndex = 0
+                    currentFlow = .multiImageCourseSelection(images: images, currentIndex: 0)
                 }
+            )
+        } else {
+            NavigationView {
+                Group {
+                    switch currentFlow {
+                    case .initial:
+                        InitialView(
+                            draftService: draftService,
+                            onTakePhoto: { image in
+                                print("onTakePhoto")
+                                capturedImage = image
+                                currentFlow = .courseSelection
+                            },
+                            onSelectDraft: { draft in
+                                currentDraft = draft
+                                currentFlow = .nextAction
+                            },
+                            onMultiplePhotos: { images in // Add this closure
+                                multipleImages = images
+                                currentImageIndex = 0
+                                currentFlow = .multiImageCourseSelection(images: images, currentIndex: 0)
+                            }
+                        )
+                        
+                    case .courseSelection:
+                        CourseSelectionView(
+                            capturedImage: capturedImage!,
+                            onCourseSelected: { course in
+                                Task {
+                                    await handlePhotoWithCourse(course)
+                                }
+                            }
+                        )
+                        
+                    case .nextAction:
+                        NextActionView(
+                            currentDraft: currentDraft!,
+                            onTakeAnother: {
+                                currentFlow = .showCamera
+                            },
+                            onContinueLater: {
+                                draftService.saveDraftMealsToLocal(draftService.draftMeals)
+                                dismiss()
+                            },
+                            onFinalize: {
+                                currentFlow = .mealDetails
+                            }
+                        )
+
+                    case .multiImageCourseSelection(let images, let currentIndex):
+                        MultiImageCourseSelectionView(
+                            images: images,
+                            currentIndex: currentIndex,
+                            onCourseSelected: { course in
+                                Task {
+                                    await handleMultiImageWithCourse(course, at: currentIndex)
+                                }
+                            }
+                        )
+                        
+                    case .mealDetails:
+                        MealDetailsView(
+                            currentDraft: currentDraft!,
+                            onPublish: { meal in
+                                Task {
+                                    await publishMeal(meal: meal)
+                                }
+                            },
+                            onBack: {
+                                currentFlow = .nextAction
+                            }
+                        )
+                    case .showCamera:
+                        // This case should ideally not be reached if the condition is correct
+                        // but as a fallback, we can return an empty view or a placeholder
+                        EmptyView()
+                    }
+                }
+                .navigationTitle("Add Meal")
+                .navigationBarTitleDisplayMode(.inline)
             }
-            .navigationTitle("Add Meal")
-            .navigationBarTitleDisplayMode(.inline)
         }
     }
     
@@ -574,6 +598,7 @@ struct NextActionView: View {
 struct MealDetailsView: View {
     let currentDraft: MealWithPhotos
     let onPublish: (Meal) -> Void  // Changed to take complete data
+    let onBack: () -> Void
     
     // Initialize state from currentDraft
     @State private var title: String
@@ -590,9 +615,10 @@ struct MealDetailsView: View {
     @Environment(\.dismiss) private var dismiss
     
     // Custom initializer to set initial state
-    init(currentDraft: MealWithPhotos, onPublish: @escaping (Meal) -> Void) {
+    init(currentDraft: MealWithPhotos, onPublish: @escaping (Meal) -> Void, onBack: @escaping () -> Void) {
         self.currentDraft = currentDraft
         self.onPublish = onPublish
+        self.onBack = onBack
         
         // Initialize state from currentDraft.meal
         _title = State(initialValue: currentDraft.meal.title ?? "")
@@ -660,6 +686,19 @@ struct MealDetailsView: View {
                 .buttonStyle(PrimaryButtonStyle())
             }
             .padding()
+        }
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button(action: {
+                    onBack()
+                }) {
+                    HStack {
+                        Image(systemName: "chevron.left")
+                        Text("Back")
+                    }
+                }
+            }
         }
     }
 

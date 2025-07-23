@@ -61,7 +61,8 @@ struct CameraFlowView: View {
         if draftMealService.draftMeals.count > 0 && flowState == .camera {
             AddMealView(
                 startingImages: capturedImages,
-                onDismiss: onComplete
+                onDismiss: onComplete,
+                stage: .initial
             )
         } else if flowState == .camera {
             CameraView(
