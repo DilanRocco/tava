@@ -565,6 +565,8 @@ struct NextActionView: View {
     
     @State private var isEditMode = false
     @State private var showingFullScreenImage: IdentifiableImage?
+    @State private var showDeleteAlert: Bool = false
+    @State private var photoToDelete: Photo?
     @EnvironmentObject private var draftService: DraftMealService
     
     // Wrapper to make UIImage Identifiable
@@ -578,120 +580,24 @@ struct NextActionView: View {
         draftService.draftMeals.first { $0.meal.id == currentDraft.meal.id }
     }
     
+    private var photoCount: Int {
+        liveDraft?.photos.count ?? currentDraft.photos.count
+    }
+    
+    private var photos: [Photo] {
+        liveDraft?.photos ?? currentDraft.photos
+    }
+    
     var body: some View {
-        VStack(spacing: 30) {
+        VStack(spacing: 24) {
             // Success indicator
-            VStack(spacing: 16) {
-                Text("✅")
-                    .font(.system(size: 60))
-                Text("Photo Added!")
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                Text("You now have \(liveDraft?.photos.count ?? currentDraft.photos.count) photo\(liveDraft?.photos.count == 1 || currentDraft.photos.count == 1 ? "" : "s")")
-                    .foregroundColor(.secondary)
-            }
+            successIndicator
             
-            // Edit button for photos
-            if (liveDraft?.photos.count ?? currentDraft.photos.count) > 0 {
-                HStack {
-                    Spacer()
-                    Button(isEditMode ? "Done" : "Edit") {
-                        isEditMode.toggle()
-                    }
-                    .foregroundColor(.blue)
-                    .font(.subheadline)
-                }
-                .padding(.horizontal)
-            }
+            // Photos section
+            photosSection
             
-            // Horizontal Photo Scroll with Plus Button
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        // Existing photos
-                        ForEach(liveDraft?.photos ?? currentDraft.photos) { photo in
-                            if let localImageData = loadLocalImageData(fileName: photo.url),
-                               let uiImage = UIImage(data: localImageData) {
-                                ZStack {
-                                    Image(uiImage: uiImage)
-                                        .resizable()
-                                        .aspectRatio(16/9, contentMode: .fill)
-                                        .frame(width: 67.5, height: 120) // 16:9 ratio
-                                        .clipped()
-                                        .cornerRadius(8)
-                                        .onTapGesture {
-                                            if isEditMode {
-                                                // Remove photo in edit mode
-                                                removePhoto(photo)
-                                            }
-                                        }
-                                        .onLongPressGesture {
-                                            // Show full screen image
-                                            showingFullScreenImage = IdentifiableImage(image: uiImage)
-                                        }
-                                    
-                                    // Remove button overlay in edit mode
-                                    if isEditMode {
-                                        VStack {
-                                            HStack {
-                                                Spacer()
-                                                Button(action: {
-                                                    removePhoto(photo)
-                                                }) {
-                                                    Image(systemName: "xmark.circle.fill")
-                                                        .font(.system(size: 20))
-                                                        .foregroundColor(.red)
-                                                        .background(Color.white, in: Circle())
-                                                }
-                                                .padding(4)
-                                            }
-                                            Spacer()
-                                        }
-                                    }
-                                }
-                            } else {
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(Color.secondary.opacity(0.3))
-                                    .frame(width: 67.5, height: 120)
-                            }
-                        }
-                        
-                        // Plus button card
-                        Button(action: onTakeAnother) {
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(Color.secondary.opacity(0.1))
-                                .frame(width: 67.5, height: 120)
-                                .overlay(
-                                    Image(systemName: "plus")
-                                        .font(.system(size: 24))
-                                        .foregroundColor(.secondary)
-                                )
-                        }
-                        .id("plusButton")
-                    }
-                    .padding(.horizontal)
-                }
-                .onAppear {
-                    // Scroll to the end (plus button) when view appears
-                    withAnimation(.easeInOut(duration: 0.5)) {
-                        proxy.scrollTo("plusButton", anchor: .trailing)
-                    }
-                }
-            }
-            
-            // Action Buttons (removed Take Another Photo)
-            VStack(spacing: 16) {
-                Button("Add More Courses Later") {
-                    onContinueLater()
-                }
-                .buttonStyle(SecondaryButtonStyle())
-                
-                Button("Finalize & Publish") {
-                    onFinalize()
-                }
-                .buttonStyle(AccentButtonStyle())
-            }
-            .padding(.horizontal)
+            // Action buttons
+            actionButtons
             
             Spacer()
         }
@@ -700,6 +606,172 @@ struct NextActionView: View {
             FullScreenImageView(image: identifiableImage.image)
         }
     }
+    
+    // MARK: - Success Indicator
+    private var successIndicator: some View {
+        VStack(spacing: 16) {
+            Text("✅")
+                .font(.system(size: 60))
+            
+            Text("Photo Added!")
+                .font(.title2)
+                .fontWeight(.semibold)
+            
+            Text("You now have \(photoCount) photo\(photoCount == 1 ? "" : "s")")
+                .foregroundColor(.secondary)
+        }
+    }
+    
+    // MARK: - Photos Section
+    private var photosSection: some View {
+        VStack(spacing: 12) {
+            // Edit button
+            if photoCount > 0 {
+                editButton
+            }
+            
+            // Photo scroll view
+            photoScrollView
+        }
+    }
+    
+    private var editButton: some View {
+        HStack {
+            Spacer()
+            Button(isEditMode ? "Done" : "Edit") {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isEditMode.toggle()
+                }
+            }
+            .foregroundColor(.blue)
+            .font(.subheadline)
+        }
+        .padding(.horizontal)
+    }
+    
+    private var photoScrollView: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 12) {
+                    // Existing photos
+                    ForEach(photos) { photo in
+                        photoThumbnail(for: photo)
+                    }
+                    
+                    // Plus button
+                    addPhotoButton
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 8) // Add vertical padding to prevent clipping
+            }
+            .frame(height: 136) // Increased height to accommodate delete button
+            .clipped() // Ensure nothing extends beyond bounds
+            .onAppear {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    withAnimation(.easeInOut(duration: 0.5)) {
+                        proxy.scrollTo("addButton", anchor: .trailing)
+                    }
+                }
+            }
+        }
+    }
+    
+    private func photoThumbnail(for photo: Photo) -> some View {
+        ZStack {
+            if let localImageData = loadLocalImageData(fileName: photo.url),
+               let uiImage = UIImage(data: localImageData) {
+                if !isEditMode {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .aspectRatio(16/9, contentMode: .fill)
+                        .frame(width: 67.5, height: 120)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .onTapGesture {
+                            showingFullScreenImage = IdentifiableImage(image: uiImage)
+                        }
+                        .contextMenu {
+                            Button {
+                                showingFullScreenImage = IdentifiableImage(image: uiImage)
+                            } label: {
+                                Label("View", systemImage: "eye")
+                            }
+                            Button(role: .destructive) {
+                                removePhoto(photo)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                } else {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .aspectRatio(16/9, contentMode: .fill)
+                        .frame(width: 67.5, height: 120)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .onTapGesture { }
+                }
+                if isEditMode {
+                    deleteButton(for: photo)
+                }
+            } else {
+                // Placeholder for failed image loads
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.secondary.opacity(0.2))
+                    .frame(width: 67.5, height: 120)
+            }
+        }
+    }
+    
+    private func deleteButton(for photo: Photo) -> some View {
+        Button {
+            removePhoto(photo)
+        } label: {
+            Image(systemName: "xmark.circle.fill")
+                .font(.system(size: 18))
+                .foregroundColor(.red)
+                .background(Color.white, in: Circle())
+        }
+        .buttonStyle(.plain)
+        .frame(width: 24, height: 24)
+        .position(x: 67.5 - 8, y: 8) // Position exactly where we want it
+        .transition(.opacity)
+    }
+    
+    private var addPhotoButton: some View {
+        Button(action: onTakeAnother) {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.secondary.opacity(0.05))
+                )
+                .frame(width: 67.5, height: 120)
+                .overlay(
+                    Image(systemName: "plus")
+                        .font(.system(size: 24))
+                        .foregroundColor(.secondary)
+                )
+        }
+        .id("addButton")
+    }
+    
+    // MARK: - Action Buttons
+    private var actionButtons: some View {
+        VStack(spacing: 16) {
+            Button("Add More Courses Later") {
+                onContinueLater()
+            }
+            .buttonStyle(SecondaryButtonStyle())
+            
+            Button("Finalize & Publish") {
+                onFinalize()
+            }
+            .buttonStyle(AccentButtonStyle())
+            .disabled(photos.isEmpty)
+            .opacity(photos.isEmpty ? 0.5 : 1.0)
+        }
+        .padding(.horizontal)
+    }
+
     
     private func removePhoto(_ photo: Photo) {
         // Remove photo from local state
@@ -881,6 +953,10 @@ struct MealDetailsView: View {
                     }
                 }
             }
+        }
+        .sheet(isPresented: $showingRestaurantSearch) {
+            // Replace this with your actual restaurant search view
+            RestaurantSearchView(selectedRestaurant: $selectedRestaurant)
         }
     }
 
