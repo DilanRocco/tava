@@ -244,12 +244,13 @@ init(startingImages: [UIImage], onDismiss: (() -> Void)? = nil, stage: MealFlow?
     
     private func publishMeal(meal: Meal) async {
        
-
+       
         do {
             try await draftService.publishEntireMeal(
                 meal: meal
             )
-            // dismiss()
+            print("Meal published")
+            dismiss() // Dismiss the view after successful publish
         } catch {
             print("Error publishing meal: \(error)")
         }
@@ -841,8 +842,8 @@ struct MealDetailsView: View {
     @State private var selectedMealType: MealType
     @State private var selectedRestaurant: Restaurant?
     @State private var showingRestaurantSearch = false
-    @State private var rating: Int
-    @State private var ingredients: String
+    @State private var rating: Int?
+    @State private var ingredients: String?
     @State private var newTag: String = ""
     @State private var tags: [String]
     
@@ -860,8 +861,8 @@ struct MealDetailsView: View {
         _privacy = State(initialValue: currentDraft.meal.privacy)
         _selectedMealType = State(initialValue: currentDraft.meal.mealType)
         _selectedRestaurant = State(initialValue: currentDraft.meal.restaurant)
-        _rating = State(initialValue: currentDraft.meal.rating ?? 0)
-        _ingredients = State(initialValue: currentDraft.meal.ingredients ?? "")
+        _rating = State(initialValue: currentDraft.meal.rating ?? nil)
+        _ingredients = State(initialValue: currentDraft.meal.ingredients ?? nil)
         _tags = State(initialValue: currentDraft.meal.tags ?? [])
     }
 
@@ -1007,7 +1008,10 @@ struct MealDetailsView: View {
                  }
                  
                  if selectedMealType == .homemade {
-                     TextField("Ingredients (optional)", text: $ingredients, axis: .vertical)
+                     TextField("Ingredients (optional)", text: Binding(
+                         get: { ingredients ?? "" },
+                         set: { ingredients = $0.isEmpty ? nil : $0 }
+                     ), axis: .vertical)
                          .textFieldStyle(.roundedBorder)
                          .lineLimit(2...4)
                          .onSubmit {
@@ -1212,16 +1216,27 @@ struct TagView: View {
 }
 
 struct StarRatingView: View {
-    @Binding var rating: Int
+    @Binding var rating: Int?
     
     var body: some View {
         HStack(spacing: 4) {
-            ForEach(1...5, id: \.self) { star in
-                Button(action: {
-                    rating = star
-                }) {
-                    Image(systemName: star <= rating ? "star.fill" : "star")
-                        .foregroundColor(star <= rating ? .yellow : .gray)
+            if let rate = rating {
+                ForEach(1...5, id: \.self) { star in
+                    Button(action: {
+                        rating = star
+                    }) {
+                        Image(systemName: star <= rate ? "star.fill" : "star")
+                            .foregroundColor(star <= rate ? .yellow : .gray)
+                    }
+                }
+            } else {
+                ForEach(1...5, id: \.self) { star in
+                    Button(action: {
+                        rating = star
+                    }) {
+                        Image(systemName: "star")
+                            .foregroundColor(.gray)
+                    }
                 }
             }
         }
