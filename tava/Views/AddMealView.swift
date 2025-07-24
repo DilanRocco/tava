@@ -3,8 +3,8 @@ import PhotosUI
 
 // MARK: - Navigation Destination Types
 enum NavigationDestination: Hashable {
-    case courseSelection
-    case multiImageCourseSelection(currentIndex: Int)
+    case courseSelection(imageData: Data) // Pass image data directly
+    case multiImageCourseSelection(images: [UIImage], currentIndex: Int) // Pass images directly
     case nextAction(draftId: UUID) // Pass draftId directly
     case mealDetails(draftId: UUID) // Pass draftId directly
 }
@@ -25,8 +25,6 @@ extension AddMealView {
 struct AddMealView: View {
     @State private var navigationPath = NavigationPath()
     @State private var currentDraftId: UUID?
-    @State private var capturedImage: UIImage?
-    @State private var multipleImages: [UIImage] = []
     @State private var showingCamera = false
     
     @EnvironmentObject private var draftService: DraftMealService
@@ -46,19 +44,18 @@ struct AddMealView: View {
         if let stage = stage {
             switch stage {
             case .courseSelection:
-                if startingImages.count > 0 {
-                    _capturedImage = State(initialValue: startingImages[0])
+                if startingImages.count > 0, 
+                   let imageData = startingImages[0].jpegData(compressionQuality: 0.8) {
                     _navigationPath = State(initialValue: {
                         var path = NavigationPath()
-                        path.append(NavigationDestination.courseSelection)
+                        path.append(NavigationDestination.courseSelection(imageData: imageData))
                         return path
                     }())
                 }
             case .multiImageCourseSelection(let images, let currentIndex):
-                _multipleImages = State(initialValue: images)
                 _navigationPath = State(initialValue: {
                     var path = NavigationPath()
-                    path.append(NavigationDestination.multiImageCourseSelection(currentIndex: currentIndex))
+                    path.append(NavigationDestination.multiImageCourseSelection(images: images, currentIndex: currentIndex))
                     return path
                 }())
             default:
@@ -66,17 +63,17 @@ struct AddMealView: View {
                 break
             }
         } else if startingImages.count == 1 {
-            _capturedImage = State(initialValue: startingImages[0])
-            _navigationPath = State(initialValue: {
-                var path = NavigationPath()
-                path.append(NavigationDestination.courseSelection)
-                return path
-            }())
+            if let imageData = startingImages[0].jpegData(compressionQuality: 0.8) {
+                _navigationPath = State(initialValue: {
+                    var path = NavigationPath()
+                    path.append(NavigationDestination.courseSelection(imageData: imageData))
+                    return path
+                }())
+            }
         } else if startingImages.count > 1 {
-            _multipleImages = State(initialValue: startingImages)
             _navigationPath = State(initialValue: {
                 var path = NavigationPath()
-                path.append(NavigationDestination.multiImageCourseSelection(currentIndex: 0))
+                path.append(NavigationDestination.multiImageCourseSelection(images: startingImages, currentIndex: 0))
                 return path
             }())
         }
@@ -108,27 +105,27 @@ struct AddMealView: View {
             }
             .navigationDestination(for: NavigationDestination.self) { destination in
                 switch destination {
-                case .courseSelection:
-                    if let image = capturedImage {
+                case .courseSelection(let imageData):
+                    if let image = UIImage(data: imageData) {
                         CourseSelectionView(
                             capturedImage: image,
                             onCourseSelected: { course in
                                 Task { 
-                                    await handlePhotoWithCourse(course)
+                                    await handlePhotoWithCourse(course, imageData)
                                 }
                             }
                         )
                         .navigationBarTitleDisplayMode(.inline)
                     }
                     
-                case .multiImageCourseSelection(let currentIndex):
-                    if currentIndex < multipleImages.count {
+                case .multiImageCourseSelection(let images, let currentIndex):
+                    if currentIndex < images.count {
                         MultiImageCourseSelectionView(
-                            images: multipleImages,
+                            images: images,
                             currentIndex: currentIndex,
                             onCourseSelected: { course in
                                 Task { 
-                                    await handleMultiImageWithCourse(course, at: currentIndex)
+                                    await handleMultiImageWithCourse(course, images: images, at: currentIndex)
                                 }
                             }
                         )
@@ -186,18 +183,12 @@ struct AddMealView: View {
         .fullScreenCover(isPresented: $showingCamera) {
             CameraView(
                 onImageCaptured: { imageData in
-                    if let image = UIImage(data: imageData) {
-                        capturedImage = image
-                        multipleImages = []
-                        showingCamera = false
-                        navigationPath.append(NavigationDestination.courseSelection)
-                    }
+                    showingCamera = false
+                    navigationPath.append(NavigationDestination.courseSelection(imageData: imageData))
                 },
                 onMultipleImagesCaptured: { images in
-                    multipleImages = images
-                    capturedImage = nil
                     showingCamera = false
-                    navigationPath.append(NavigationDestination.multiImageCourseSelection(currentIndex: 0))
+                    navigationPath.append(NavigationDestination.multiImageCourseSelection(images: images, currentIndex: 0))
                 },
                 onCancel: {
                     showingCamera = false
@@ -207,11 +198,11 @@ struct AddMealView: View {
     }
 
     // MARK: - Helper Functions
-    private func handleMultiImageWithCourse(_ course: Course?, at index: Int) async {
-        guard index < multipleImages.count else { return }
+    private func handleMultiImageWithCourse(_ course: Course?, images: [UIImage], at index: Int) async {
+        guard index < images.count else { return }
         
         do {
-            let image = multipleImages[index]
+            let image = images[index]
             
             if currentDraftId == nil {
                 let newDraft = try await draftService.createDraftMeal()
@@ -229,10 +220,10 @@ struct AddMealView: View {
                 // Navigation handled after async operation completes
                 await MainActor.run {
                     let nextIndex = index + 1
-                    if nextIndex < multipleImages.count {
+                    if nextIndex < images.count {
                         // Replace current destination with next image
                         navigationPath.removeLast()
-                        navigationPath.append(NavigationDestination.multiImageCourseSelection(currentIndex: nextIndex))
+                        navigationPath.append(NavigationDestination.multiImageCourseSelection(images: images, currentIndex: nextIndex))
                     } else {
                         // Done with all images, go to next action with the draftId
                         navigationPath.removeLast()
@@ -245,7 +236,8 @@ struct AddMealView: View {
         }
     }
 
-    private func handlePhotoWithCourse(_ course: Course?) async {
+    // Update handlePhotoWithCourse signature and usage
+    private func handlePhotoWithCourse(_ course: Course?, _ imageData: Data) async {
         do {
             // Only create a new draft if we don't have one
             if currentDraftId == nil {
@@ -253,15 +245,12 @@ struct AddMealView: View {
                 currentDraftId = newDraft.meal.id
             }
             
-            if let draftId = currentDraftId,
-               let imageData = capturedImage?.jpegData(compressionQuality: 0.8) {
+            if let draftId = currentDraftId {
                 let _ = try await draftService.addPhoto(
                     to: draftId,
                     imageData: imageData,
                     course: course
                 )
-                
-                capturedImage = nil
                 
                 // Navigate after async operation completes
                 await MainActor.run {
