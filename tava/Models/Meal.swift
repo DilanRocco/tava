@@ -169,7 +169,7 @@ enum MealStatus: String, CaseIterable, Codable {
 
 
 
-struct MealWithPhotos: Identifiable, Codable {
+struct MealWithPhotos: Identifiable, Codable, Equatable {
     let meal: Meal
     let photos: [Photo]
     

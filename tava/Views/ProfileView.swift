@@ -253,11 +253,7 @@ struct ProfileView: View {
         .padding(.top, 60)
     }
 }
-struct EmptyView: View {
-    var body: some View {
-        Text("TODO")
-    }
-}
+
 struct StatView: View {
     let title: String
     let value: String

@@ -77,10 +77,12 @@ struct CameraFlowView: View {
                     // self.addedMultipleImages = true
                     capturedImages = images
                     flowState = .addMeal
+                },
+                onCancel: {
+                    onComplete()
                 }
             )
         } else {
-            
             AddMealView(
                 startingImages: capturedImages,
                 onDismiss: onComplete,

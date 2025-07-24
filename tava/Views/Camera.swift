@@ -6,7 +6,8 @@ import AVFoundation
 struct CameraView: UIViewControllerRepresentable {
     let onImageCaptured: (Data) -> Void
     let onMultipleImagesCaptured: ([UIImage]) -> Void
-    @Environment(\.dismiss) private var dismiss
+    let onCancel: () -> Void
+    
     
     func makeUIViewController(context: Context) -> CameraViewController {
         let controller = CameraViewController()
@@ -39,7 +40,7 @@ struct CameraView: UIViewControllerRepresentable {
         }
         
         func didCancel() {
-            parent.dismiss()
+            parent.onCancel()
         }
     }
 }

@@ -56,7 +56,7 @@ init(startingImages: [UIImage], onDismiss: (() -> Void)? = nil, stage: MealFlow?
     }
         
     var body: some View {
-        if currentFlow == .showCamera {
+        if case .showCamera = currentFlow {
             CameraView(
                 onImageCaptured: { imageData in
                     if let image = UIImage(data: imageData) {
@@ -68,91 +68,106 @@ init(startingImages: [UIImage], onDismiss: (() -> Void)? = nil, stage: MealFlow?
                     multipleImages = images
                     currentImageIndex = 0
                     currentFlow = .multiImageCourseSelection(images: images, currentIndex: 0)
+                },
+                onCancel: {
+                    currentFlow = .initial
                 }
             )
         } else {
             NavigationView {
-                Group {
-                    switch currentFlow {
-                    case .initial:
-                        InitialView(
-                            draftService: draftService,
-                            onTakePhoto: { image in
-                                print("onTakePhoto")
-                                capturedImage = image
-                                currentFlow = .courseSelection
-                            },
-                            onSelectDraft: { draft in
-                                currentDraft = draft
-                                currentFlow = .nextAction
-                            },
-                            onMultiplePhotos: { images in // Add this closure
-                                multipleImages = images
-                                currentImageIndex = 0
-                                currentFlow = .multiImageCourseSelection(images: images, currentIndex: 0)
-                            }
-                        )
-                        
-                    case .courseSelection:
-                        CourseSelectionView(
-                            capturedImage: capturedImage!,
-                            onCourseSelected: { course in
-                                Task {
-                                    await handlePhotoWithCourse(course)
+                flowContent
+                    .navigationTitle("Add Meal")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarLeading) {
+                            if case .mealDetails = currentFlow {
+                                EmptyView()
+                            } else {
+                                Button("Cancel") {
+                                    if let onDismiss = onDismiss {
+                                        onDismiss()
+                                    } else {
+                                        dismiss()
+                                    }
                                 }
                             }
-                        )
-                        
-                    case .nextAction:
-                        NextActionView(
-                            currentDraft: currentDraft!,
-                            onTakeAnother: {
-                                currentFlow = .showCamera
-                            },
-                            onContinueLater: {
-                                draftService.saveDraftMealsToLocal(draftService.draftMeals)
-                                dismiss()
-                            },
-                            onFinalize: {
-                                currentFlow = .mealDetails
-                            }
-                        )
-
-                    case .multiImageCourseSelection(let images, let currentIndex):
-                        MultiImageCourseSelectionView(
-                            images: images,
-                            currentIndex: currentIndex,
-                            onCourseSelected: { course in
-                                Task {
-                                    await handleMultiImageWithCourse(course, at: currentIndex)
-                                }
-                            }
-                        )
-                        
-                    case .mealDetails:
-                        MealDetailsView(
-                            currentDraft: currentDraft!,
-                            onPublish: { meal in
-                                Task {
-                                    await publishMeal(meal: meal)
-                                }
-                            },
-                            onBack: {
-                                currentFlow = .nextAction
-                            }
-                        )
-                    case .showCamera:
-                        // This case should ideally not be reached if the condition is correct
-                        // but as a fallback, we can return an empty view or a placeholder
-                        EmptyView()
+                        }
                     }
-                }
-                .navigationTitle("Add Meal")
-                .navigationBarTitleDisplayMode(.inline)
             }
         }
     }
     
+    @ViewBuilder
+    private var flowContent: some View {
+        switch currentFlow {
+        case .initial:
+            InitialView(
+                draftService: draftService,
+                onTakePhoto: { image in
+                    print("onTakePhoto")
+                    capturedImage = image
+                    currentFlow = .courseSelection
+                },
+                onSelectDraft: { draft in
+                    currentDraft = draft
+                    currentFlow = .nextAction
+                },
+                onMultiplePhotos: { images in
+                    multipleImages = images
+                    currentImageIndex = 0
+                    currentFlow = .multiImageCourseSelection(images: images, currentIndex: 0)
+                }
+            )
+        case .courseSelection:
+            CourseSelectionView(
+                capturedImage: capturedImage!,
+                onCourseSelected: { course in
+                    Task { await handlePhotoWithCourse(course) }
+                }
+            )
+        case .nextAction:
+            if let draft = liveCurrentDraft {
+                NextActionView(
+                    currentDraft: draft,
+                    onTakeAnother: { currentFlow = .showCamera },
+                    onContinueLater: {
+                        draftService.saveDraftMealsToLocal(draftService.draftMeals)
+                        dismiss()
+                    },
+                    onFinalize: { currentFlow = .mealDetails }
+                )
+            }
+        case .multiImageCourseSelection(let images, let currentIndex):
+            MultiImageCourseSelectionView(
+                images: images,
+                currentIndex: currentIndex,
+                onCourseSelected: { course in
+                    Task { await handleMultiImageWithCourse(course, at: currentIndex) }
+                }
+            )
+        case .mealDetails:
+            if let draft = liveCurrentDraft {
+                MealDetailsView(
+                    currentDraft: draft,
+                    onPublish: { meal in Task { await publishMeal(meal: meal) } },
+                    onBack: { updatedDraft in
+                        // Update the draft in your service and state
+                        if let idx = draftService.draftMeals.firstIndex(where: { $0.meal.id == updatedDraft.meal.id }) {
+                            draftService.draftMeals[idx] = updatedDraft
+                            draftService.saveDraftMealsToLocal(draftService.draftMeals)
+                            print("updatedDraft: \(updatedDraft)")
+                        }
+                        currentDraft = updatedDraft
+                        currentFlow = .nextAction
+                    },
+                    onSubmitField: { (key, value) in updateDraftField(mealId: draft.meal.id, key: key, value: value) }
+                )
+            }
+        case .showCamera:
+            EmptyView()
+        }
+    }
+
     private func handleMultiImageWithCourse(_ course: Course?, at index: Int) async {
         guard index < multipleImages.count else { return }
         
@@ -238,6 +253,40 @@ init(startingImages: [UIImage], onDismiss: (() -> Void)? = nil, stage: MealFlow?
         } catch {
             print("Error publishing meal: \(error)")
         }
+    }
+
+    // Add this function to update any field generically
+    private func updateDraftField(mealId: UUID, key: String, value: Any) {
+        guard let mealIndex = draftService.draftMeals.firstIndex(where: { $0.meal.id == mealId }) else { return }
+        var draft = draftService.draftMeals[mealIndex]
+        switch key {
+        case "title":
+            draft = draft.updating(title: value as? String)
+        case "description":
+            draft = draft.updating(description: value as? String)
+        case "privacy":
+            draft = draft.updating(privacy: value as? MealPrivacy)
+        case "mealType":
+            draft = draft.updating(mealType: value as? MealType)
+        case "restaurant":
+            draft = draft.updating(restaurant: value as? Restaurant)
+        case "rating":
+            draft = draft.updating(rating: value as? Int)
+        case "ingredients":
+            draft = draft.updating(ingredients: value as? String)
+        case "tags":
+            draft = draft.updating(tags: value as? [String])
+        default:
+            break
+        }
+        draftService.draftMeals[mealIndex] = draft
+        draftService.saveDraftMealsToLocal(draftService.draftMeals)
+    }
+
+    // Add this computed property
+    private var liveCurrentDraft: MealWithPhotos? {
+        guard let draft = currentDraft else { return nil }
+        return draftService.draftMeals.first(where: { $0.meal.id == draft.meal.id }) ?? draft
     }
 }
 
@@ -347,6 +396,9 @@ struct InitialView: View {
                 onMultipleImagesCaptured: { images in
                     showingCamera = false  // Add this line
                     onMultiplePhotos(images)
+                },
+                onCancel: {
+                    showingCamera = false
                 }
             )
         }
@@ -511,6 +563,21 @@ struct NextActionView: View {
     let onContinueLater: () -> Void
     let onFinalize: () -> Void
     
+    @State private var isEditMode = false
+    @State private var showingFullScreenImage: IdentifiableImage?
+    @EnvironmentObject private var draftService: DraftMealService
+    
+    // Wrapper to make UIImage Identifiable
+    struct IdentifiableImage: Identifiable {
+        let id = UUID()
+        let image: UIImage
+    }
+    
+    // Get the live draft data from the service
+    private var liveDraft: MealWithPhotos? {
+        draftService.draftMeals.first { $0.meal.id == currentDraft.meal.id }
+    }
+    
     var body: some View {
         VStack(spacing: 30) {
             // Success indicator
@@ -520,8 +587,21 @@ struct NextActionView: View {
                 Text("Photo Added!")
                     .font(.title2)
                     .fontWeight(.semibold)
-                Text("You now have \(currentDraft.photos.count) photo\(currentDraft.photos.count == 1 ? "" : "s")")
+                Text("You now have \(liveDraft?.photos.count ?? currentDraft.photos.count) photo\(liveDraft?.photos.count == 1 || currentDraft.photos.count == 1 ? "" : "s")")
                     .foregroundColor(.secondary)
+            }
+            
+            // Edit button for photos
+            if (liveDraft?.photos.count ?? currentDraft.photos.count) > 0 {
+                HStack {
+                    Spacer()
+                    Button(isEditMode ? "Done" : "Edit") {
+                        isEditMode.toggle()
+                    }
+                    .foregroundColor(.blue)
+                    .font(.subheadline)
+                }
+                .padding(.horizontal)
             }
             
             // Horizontal Photo Scroll with Plus Button
@@ -529,15 +609,46 @@ struct NextActionView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
                         // Existing photos
-                        ForEach(currentDraft.photos) { photo in
+                        ForEach(liveDraft?.photos ?? currentDraft.photos) { photo in
                             if let localImageData = loadLocalImageData(fileName: photo.url),
                                let uiImage = UIImage(data: localImageData) {
-                                Image(uiImage: uiImage)
-                                    .resizable()
-                                    .aspectRatio(16/9, contentMode: .fill)
-                                    .frame(width: 67.5, height: 120) // 16:9 ratio
-                                    .clipped()
-                                    .cornerRadius(8)
+                                ZStack {
+                                    Image(uiImage: uiImage)
+                                        .resizable()
+                                        .aspectRatio(16/9, contentMode: .fill)
+                                        .frame(width: 67.5, height: 120) // 16:9 ratio
+                                        .clipped()
+                                        .cornerRadius(8)
+                                        .onTapGesture {
+                                            if isEditMode {
+                                                // Remove photo in edit mode
+                                                removePhoto(photo)
+                                            }
+                                        }
+                                        .onLongPressGesture {
+                                            // Show full screen image
+                                            showingFullScreenImage = IdentifiableImage(image: uiImage)
+                                        }
+                                    
+                                    // Remove button overlay in edit mode
+                                    if isEditMode {
+                                        VStack {
+                                            HStack {
+                                                Spacer()
+                                                Button(action: {
+                                                    removePhoto(photo)
+                                                }) {
+                                                    Image(systemName: "xmark.circle.fill")
+                                                        .font(.system(size: 20))
+                                                        .foregroundColor(.red)
+                                                        .background(Color.white, in: Circle())
+                                                }
+                                                .padding(4)
+                                            }
+                                            Spacer()
+                                        }
+                                    }
+                                }
                             } else {
                                 RoundedRectangle(cornerRadius: 8)
                                     .fill(Color.secondary.opacity(0.3))
@@ -585,6 +696,30 @@ struct NextActionView: View {
             Spacer()
         }
         .padding()
+        .sheet(item: $showingFullScreenImage) { identifiableImage in
+            FullScreenImageView(image: identifiableImage.image)
+        }
+    }
+    
+    private func removePhoto(_ photo: Photo) {
+        // Remove photo from local state
+        if let mealIndex = draftService.draftMeals.firstIndex(where: { $0.meal.id == currentDraft.meal.id }) {
+            let currentMeal = draftService.draftMeals[mealIndex]
+            let updatedPhotos = currentMeal.photos.filter { $0.id != photo.id }
+            let updatedMeal = MealWithPhotos(meal: currentMeal.meal, photos: updatedPhotos)
+            draftService.draftMeals[mealIndex] = updatedMeal
+            
+            // Save to local storage
+            draftService.saveDraftMealsToLocal(draftService.draftMeals)
+            
+            // Delete local image file
+            let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            let filePath = documentsDirectory.appendingPathComponent("draft_photos").appendingPathComponent(photo.url)
+            try? FileManager.default.removeItem(at: filePath)
+        }
+        
+        // Exit edit mode after removing
+        isEditMode = false
     }
     
     private func loadLocalImageData(fileName: String) -> Data? {
@@ -594,11 +729,38 @@ struct NextActionView: View {
     }
 }
 
+// MARK: - Full Screen Image View
+struct FullScreenImageView: View {
+    let image: UIImage
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationView {
+            GeometryReader { geometry in
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .background(Color.black)
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
 // MARK: - Meal Details View (Publishing)
 struct MealDetailsView: View {
     let currentDraft: MealWithPhotos
     let onPublish: (Meal) -> Void  // Changed to take complete data
-    let onBack: () -> Void
+    let onBack: (MealWithPhotos) -> Void
+    let onSubmitField: (String, Any) -> Void
     
     // Initialize state from currentDraft
     @State private var title: String
@@ -615,11 +777,11 @@ struct MealDetailsView: View {
     @Environment(\.dismiss) private var dismiss
     
     // Custom initializer to set initial state
-    init(currentDraft: MealWithPhotos, onPublish: @escaping (Meal) -> Void, onBack: @escaping () -> Void) {
+    init(currentDraft: MealWithPhotos, onPublish: @escaping (Meal) -> Void, onBack: @escaping (MealWithPhotos) -> Void, onSubmitField: @escaping (String, Any) -> Void) {
         self.currentDraft = currentDraft
         self.onPublish = onPublish
         self.onBack = onBack
-        
+        self.onSubmitField = onSubmitField
         // Initialize state from currentDraft.meal
         _title = State(initialValue: currentDraft.meal.title ?? "")
         _description = State(initialValue: currentDraft.meal.description ?? "")
@@ -646,6 +808,9 @@ struct MealDetailsView: View {
                             .fontWeight(.medium)
                         TextField("What did you eat?", text: $title)
                             .textFieldStyle(.roundedBorder)
+                            .onSubmit {
+                                onSubmitField("title", title)
+                            }
                     }
                     
                     VStack(alignment: .leading, spacing: 8) {
@@ -655,6 +820,9 @@ struct MealDetailsView: View {
                         TextField("Tell us about it...", text: $description, axis: .vertical)
                             .textFieldStyle(.roundedBorder)
                             .lineLimit(3...6)
+                            .onSubmit {
+                                onSubmitField("description", description)
+                            }
                     }
                     
 
@@ -687,11 +855,25 @@ struct MealDetailsView: View {
             }
             .padding()
         }
+        .contentShape(Rectangle()) // Makes the whole area tappable
+        .onTapGesture {
+            hideKeyboard()
+        }
         .navigationBarBackButtonHidden(true)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button(action: {
-                    onBack()
+                    let updatedDraft = currentDraft.updating(
+                        title: title,
+                        description: description,
+                        privacy: privacy,
+                        mealType: selectedMealType,
+                        restaurant: selectedRestaurant,
+                        rating: rating,
+                        ingredients: ingredients,
+                        tags: tags
+                    )
+                    onBack(updatedDraft)
                 }) {
                     HStack {
                         Image(systemName: "chevron.left")
@@ -752,6 +934,9 @@ struct MealDetailsView: View {
                      TextField("Ingredients (optional)", text: $ingredients, axis: .vertical)
                          .textFieldStyle(.roundedBorder)
                          .lineLimit(2...4)
+                         .onSubmit {
+                             onSubmitField("ingredients", ingredients)
+                         }
                  }
             }
         }
@@ -775,6 +960,7 @@ struct MealDetailsView: View {
                     .textFieldStyle(.roundedBorder)
                     .onSubmit {
                         addTag()
+                        onSubmitField("tags", tags)
                     }
                 
                 Button("Add", action: addTag)
@@ -839,6 +1025,7 @@ struct MealDetailsView: View {
         }
     }
     
+    // Remove saveDraftField()
 }
 
 
@@ -962,5 +1149,11 @@ struct StarRatingView: View {
                 }
             }
         }
+    }
+}
+
+extension View {
+    func hideKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 }
