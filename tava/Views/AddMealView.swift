@@ -204,10 +204,8 @@ struct AddMealView: View {
         do {
             let image = images[index]
             
-            if currentDraftId == nil {
-                let newDraft = try await draftService.createDraftMeal()
-                currentDraftId = newDraft.meal.id
-            }
+            let newDraft = try await draftService.createDraftMeal()
+            currentDraftId = newDraft.meal.id
             
             if let draftId = currentDraftId,
                let imageData = image.jpegData(compressionQuality: 0.8) {
@@ -239,12 +237,8 @@ struct AddMealView: View {
     // Update handlePhotoWithCourse signature and usage
     private func handlePhotoWithCourse(_ course: Course?, _ imageData: Data) async {
         do {
-            // Only create a new draft if we don't have one
-            if currentDraftId == nil {
-                let newDraft = try await draftService.createDraftMeal()
-                currentDraftId = newDraft.meal.id
-            }
-            
+            let newDraft = try await draftService.createDraftMeal()
+            currentDraftId = newDraft.meal.id
             if let draftId = currentDraftId {
                 let _ = try await draftService.addPhoto(
                     to: draftId,
