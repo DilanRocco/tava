@@ -1,206 +1,245 @@
 import SwiftUI
 import PhotosUI
 
+// MARK: - Navigation Destination Types
+enum NavigationDestination: Hashable {
+    case courseSelection
+    case multiImageCourseSelection(currentIndex: Int)
+    case nextAction(draftId: UUID) // Pass draftId directly
+    case mealDetails(draftId: UUID) // Pass draftId directly
+}
+
+// MARK: - Legacy MealFlow enum for backwards compatibility
+extension AddMealView {
+    enum MealFlow: Equatable {
+        case initial
+        case courseSelection
+        case multiImageCourseSelection(images: [UIImage], currentIndex: Int)
+        case nextAction
+        case mealDetails
+        case showCamera
+    }
+}
+
 // MARK: - Main Add Meal View
 struct AddMealView: View {
-    
-    @State private var currentFlow: MealFlow = .initial
-    @State private var currentDraft: MealWithPhotos?
+    @State private var navigationPath = NavigationPath()
+    @State private var currentDraftId: UUID?
     @State private var capturedImage: UIImage?
-
     @State private var multipleImages: [UIImage] = []
-    @State private var currentImageIndex = 0
+    @State private var showingCamera = false
+    
     @EnvironmentObject private var draftService: DraftMealService
     @Environment(\.dismiss) private var dismiss
     let onDismiss: (() -> Void)?
 
-init(startingImages: [UIImage], onDismiss: (() -> Void)? = nil, stage: MealFlow? = .initial) {
-    self.onDismiss = onDismiss
-    print("startingImages: \(startingImages)")
-    
-    if startingImages.count == 0 {
-        // Initialize with default values
-        _currentFlow = State(initialValue: .initial)
-        _capturedImage = State(initialValue: nil)
-        _multipleImages = State(initialValue: [])
-        _currentImageIndex = State(initialValue: 0)
-        return
+    // Computed property to always get the latest draft from service
+    private var currentDraft: MealWithPhotos? {
+        guard let draftId = currentDraftId else { return nil }
+        return draftService.draftMeals.first { $0.meal.id == draftId }
     }
-    
-    if startingImages.count == 1 {
-        print("startingImages: \(startingImages)")
-        print("Setting up single image flow")
-        // Use the State wrapper initializer
-        _capturedImage = State(initialValue: startingImages[0])
-        _currentFlow = State(initialValue: .courseSelection)
-        _multipleImages = State(initialValue: [])
-        _currentImageIndex = State(initialValue: 0)
-    } else {
-        // Use the State wrapper initializer for multiple images
-        _multipleImages = State(initialValue: startingImages)
-        _currentImageIndex = State(initialValue: 0)
-        _currentFlow = State(initialValue: .multiImageCourseSelection(images: startingImages, currentIndex: 0))
-        _capturedImage = State(initialValue: nil)
-    }
-}
 
-    
-    
-    enum MealFlow {
-        case initial           // Shows camera/library + collaborative meals
-        case courseSelection   // After taking photo, select course
-        case multiImageCourseSelection(images: [UIImage], currentIndex: Int) // For multiple images
-        case nextAction       // Take another photo, continue later, or finalize
-        case mealDetails      // Final details for publishing
-        case showCamera // <-- Add this
-    }
+    init(startingImages: [UIImage] = [], onDismiss: (() -> Void)? = nil, stage: MealFlow? = nil) {
+        self.onDismiss = onDismiss
         
+        // Handle legacy stage parameter by converting to new navigation system
+        if let stage = stage {
+            switch stage {
+            case .courseSelection:
+                if startingImages.count > 0 {
+                    _capturedImage = State(initialValue: startingImages[0])
+                    _navigationPath = State(initialValue: {
+                        var path = NavigationPath()
+                        path.append(NavigationDestination.courseSelection)
+                        return path
+                    }())
+                }
+            case .multiImageCourseSelection(let images, let currentIndex):
+                _multipleImages = State(initialValue: images)
+                _navigationPath = State(initialValue: {
+                    var path = NavigationPath()
+                    path.append(NavigationDestination.multiImageCourseSelection(currentIndex: currentIndex))
+                    return path
+                }())
+            default:
+                // For other stages, use default behavior
+                break
+            }
+        } else if startingImages.count == 1 {
+            _capturedImage = State(initialValue: startingImages[0])
+            _navigationPath = State(initialValue: {
+                var path = NavigationPath()
+                path.append(NavigationDestination.courseSelection)
+                return path
+            }())
+        } else if startingImages.count > 1 {
+            _multipleImages = State(initialValue: startingImages)
+            _navigationPath = State(initialValue: {
+                var path = NavigationPath()
+                path.append(NavigationDestination.multiImageCourseSelection(currentIndex: 0))
+                return path
+            }())
+        }
+    }
+    
     var body: some View {
-        if case .showCamera = currentFlow {
+        NavigationStack(path: $navigationPath) {
+            InitialView(
+                draftService: draftService,
+                onTakePhoto: { showingCamera = true },
+                onSelectDraft: { draft in
+                    // Set the current draft ID and navigate with it directly
+                    currentDraftId = draft.meal.id
+                    navigationPath.append(NavigationDestination.nextAction(draftId: draft.meal.id))
+                }
+            )
+            .navigationTitle("Add Meal")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        if let onDismiss = onDismiss {
+                            onDismiss()
+                        } else {
+                            dismiss()
+                        }
+                    }
+                }
+            }
+            .navigationDestination(for: NavigationDestination.self) { destination in
+                switch destination {
+                case .courseSelection:
+                    if let image = capturedImage {
+                        CourseSelectionView(
+                            capturedImage: image,
+                            onCourseSelected: { course in
+                                Task { 
+                                    await handlePhotoWithCourse(course)
+                                }
+                            }
+                        )
+                        .navigationBarTitleDisplayMode(.inline)
+                    }
+                    
+                case .multiImageCourseSelection(let currentIndex):
+                    if currentIndex < multipleImages.count {
+                        MultiImageCourseSelectionView(
+                            images: multipleImages,
+                            currentIndex: currentIndex,
+                            onCourseSelected: { course in
+                                Task { 
+                                    await handleMultiImageWithCourse(course, at: currentIndex)
+                                }
+                            }
+                        )
+                        .navigationBarTitleDisplayMode(.inline)
+                    }
+                    
+                case .nextAction(let draftId):
+                    // Use the draftId directly from the navigation destination
+                    if let draft = draftService.draftMeals.first(where: { $0.meal.id == draftId }) {
+                        NextActionView(
+                            draftId: draftId,
+                            onTakeAnother: { 
+                                showingCamera = true 
+                            },
+                            onContinueLater: {
+                                draftService.saveDraftMealsToLocal(draftService.draftMeals)
+                                if let onDismiss = onDismiss {
+                                    onDismiss()
+                                } else {
+                                    dismiss()
+                                }
+                            },
+                            onFinalize: {
+                                navigationPath.append(NavigationDestination.mealDetails(draftId: draftId))
+                            }
+                        )
+                        .navigationBarTitleDisplayMode(.inline)
+                        .environmentObject(draftService)
+                    } else {
+                        Text("No draft available")
+                            .foregroundColor(.secondary)
+                    }
+                    
+                case .mealDetails(let draftId):
+                    // Use the draftId directly from the navigation destination
+                    if let draft = draftService.draftMeals.first(where: { $0.meal.id == draftId }) {
+                        MealDetailsView(
+                            draftId: draftId,
+                            onPublish: { meal in 
+                                Task { 
+                                    await publishMeal(meal: meal) 
+                                }
+                            }
+                        )
+                        .navigationBarTitleDisplayMode(.inline)
+                        .navigationTitle("Finalize Meal")
+                        .environmentObject(draftService)
+                    } else {
+                        Text("No draft available")
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+        .fullScreenCover(isPresented: $showingCamera) {
             CameraView(
                 onImageCaptured: { imageData in
                     if let image = UIImage(data: imageData) {
                         capturedImage = image
-                        currentFlow = .courseSelection
+                        multipleImages = []
+                        showingCamera = false
+                        navigationPath.append(NavigationDestination.courseSelection)
                     }
                 },
                 onMultipleImagesCaptured: { images in
                     multipleImages = images
-                    currentImageIndex = 0
-                    currentFlow = .multiImageCourseSelection(images: images, currentIndex: 0)
+                    capturedImage = nil
+                    showingCamera = false
+                    navigationPath.append(NavigationDestination.multiImageCourseSelection(currentIndex: 0))
                 },
                 onCancel: {
-                    currentFlow = .initial
+                    showingCamera = false
                 }
             )
-        } else {
-            NavigationView {
-                flowContent
-                    .navigationTitle("Add Meal")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .navigationBarLeading) {
-                            if case .mealDetails = currentFlow {
-                                EmptyView()
-                            } else {
-                                Button("Cancel") {
-                                    if let onDismiss = onDismiss {
-                                        onDismiss()
-                                    } else {
-                                        dismiss()
-                                    }
-                                }
-                            }
-                        }
-                    }
-            }
-        }
-    }
-    
-    @ViewBuilder
-    private var flowContent: some View {
-        switch currentFlow {
-        case .initial:
-            InitialView(
-                draftService: draftService,
-                onTakePhoto: { image in
-                    print("onTakePhoto")
-                    capturedImage = image
-                    currentFlow = .courseSelection
-                },
-                onSelectDraft: { draft in
-                    currentDraft = draft
-                    currentFlow = .nextAction
-                },
-                onMultiplePhotos: { images in
-                    multipleImages = images
-                    currentImageIndex = 0
-                    currentFlow = .multiImageCourseSelection(images: images, currentIndex: 0)
-                }
-            )
-        case .courseSelection:
-            CourseSelectionView(
-                capturedImage: capturedImage!,
-                onCourseSelected: { course in
-                    Task { await handlePhotoWithCourse(course) }
-                }
-            )
-        case .nextAction:
-            if let draft = liveCurrentDraft {
-                NextActionView(
-                    currentDraft: draft,
-                    onTakeAnother: { currentFlow = .showCamera },
-                    onContinueLater: {
-                        draftService.saveDraftMealsToLocal(draftService.draftMeals)
-                        dismiss()
-                    },
-                    onFinalize: { currentFlow = .mealDetails }
-                )
-            }
-        case .multiImageCourseSelection(let images, let currentIndex):
-            MultiImageCourseSelectionView(
-                images: images,
-                currentIndex: currentIndex,
-                onCourseSelected: { course in
-                    Task { await handleMultiImageWithCourse(course, at: currentIndex) }
-                }
-            )
-        case .mealDetails:
-            if let draft = liveCurrentDraft {
-                MealDetailsView(
-                    currentDraft: draft,
-                    onPublish: { meal in Task { await publishMeal(meal: meal) } },
-                    onBack: { updatedDraft in
-                        // Update the draft in your service and state
-                        if let idx = draftService.draftMeals.firstIndex(where: { $0.meal.id == updatedDraft.meal.id }) {
-                            draftService.draftMeals[idx] = updatedDraft
-                            draftService.saveDraftMealsToLocal(draftService.draftMeals)
-                            print("updatedDraft: \(updatedDraft)")
-                        }
-                        currentDraft = updatedDraft
-                        currentFlow = .nextAction
-                    },
-                    onSubmitField: { (key, value) in updateDraftField(mealId: draft.meal.id, key: key, value: value) }
-                )
-            }
-        case .showCamera:
-            EmptyView()
         }
     }
 
+    // MARK: - Helper Functions
     private func handleMultiImageWithCourse(_ course: Course?, at index: Int) async {
         guard index < multipleImages.count else { return }
         
         do {
             let image = multipleImages[index]
             
-            if currentDraft == nil {
-                // Create new draft for first image
-                currentDraft = try await draftService.createDraftMeal()
+            if currentDraftId == nil {
+                let newDraft = try await draftService.createDraftMeal()
+                currentDraftId = newDraft.meal.id
             }
             
-            if let draft = currentDraft,
-            let imageData = image.jpegData(compressionQuality: 0.8) {
+            if let draftId = currentDraftId,
+               let imageData = image.jpegData(compressionQuality: 0.8) {
                 let _ = try await draftService.addPhoto(
-                    to: draft.meal.id,
+                    to: draftId,
                     imageData: imageData,
                     course: course
                 )
-                // Refresh the current draft
-                currentDraft = draftService.draftMeals.first { $0.meal.id == draft.meal.id }
+                
+                // Navigation handled after async operation completes
+                await MainActor.run {
+                    let nextIndex = index + 1
+                    if nextIndex < multipleImages.count {
+                        // Replace current destination with next image
+                        navigationPath.removeLast()
+                        navigationPath.append(NavigationDestination.multiImageCourseSelection(currentIndex: nextIndex))
+                    } else {
+                        // Done with all images, go to next action with the draftId
+                        navigationPath.removeLast()
+                        navigationPath.append(NavigationDestination.nextAction(draftId: draftId))
+                    }
+                }
             }
-            
-            // Check if there are more images to process
-            let nextIndex = index + 1
-            if nextIndex < multipleImages.count {
-                currentFlow = .multiImageCourseSelection(images: multipleImages, currentIndex: nextIndex)
-            } else {
-                // All images processed, go to next action
-                currentFlow = .nextAction
-                multipleImages.removeAll()
-                currentImageIndex = 0
-            }
-            
         } catch {
             print("Error adding photo: \(error)")
         }
@@ -208,100 +247,57 @@ init(startingImages: [UIImage], onDismiss: (() -> Void)? = nil, stage: MealFlow?
 
     private func handlePhotoWithCourse(_ course: Course?) async {
         do {
-            if let draft = currentDraft {
-                // Add to existing draft
-                if let imageData = capturedImage?.jpegData(compressionQuality: 0.8) {
-                    let _ = try await draftService.addPhoto(
-                        to: draft.meal.id,
-                        imageData: imageData,
-                        course: course
-                    )
-                    // **ADD THIS**: Refresh the current draft with updated data
-                    currentDraft = draftService.draftMeals.first { $0.meal.id == draft.meal.id }
-                }
-            } else {
-                // Create new draft
+            // Only create a new draft if we don't have one
+            if currentDraftId == nil {
                 let newDraft = try await draftService.createDraftMeal()
-                if let imageData = capturedImage?.jpegData(compressionQuality: 0.8) {
-                    let _ = try await draftService.addPhoto(
-                        to: newDraft.meal.id,
-                        imageData: imageData,
-                        course: course
-                    )
-                    // **ADD THIS**: Refresh the current draft with updated data
-                    currentDraft = draftService.draftMeals.first { $0.meal.id == newDraft.meal.id }
-                }
+                currentDraftId = newDraft.meal.id
             }
             
-            // Move to next action
-            currentFlow = .nextAction
-            capturedImage = nil
-            
+            if let draftId = currentDraftId,
+               let imageData = capturedImage?.jpegData(compressionQuality: 0.8) {
+                let _ = try await draftService.addPhoto(
+                    to: draftId,
+                    imageData: imageData,
+                    course: course
+                )
+                
+                capturedImage = nil
+                
+                // Navigate after async operation completes
+                await MainActor.run {
+                    navigationPath.append(NavigationDestination.nextAction(draftId: draftId))
+                }
+            }
         } catch {
             print("Error adding photo: \(error)")
         }
     }
     
     private func publishMeal(meal: Meal) async {
-       
-       
         do {
-            try await draftService.publishEntireMeal(
-                meal: meal
-            )
-            print("Meal published")
-            dismiss() // Dismiss the view after successful publish
+            try await draftService.publishEntireMeal(meal: meal)
+            print("meal published: \(meal)")
+            await MainActor.run {
+                if let onDismiss = onDismiss {
+                    onDismiss()
+                } else {
+                    dismiss()
+                }
+            }
         } catch {
             print("Error publishing meal: \(error)")
         }
     }
-
-    // Add this function to update any field generically
-    private func updateDraftField(mealId: UUID, key: String, value: Any) {
-        guard let mealIndex = draftService.draftMeals.firstIndex(where: { $0.meal.id == mealId }) else { return }
-        var draft = draftService.draftMeals[mealIndex]
-        switch key {
-        case "title":
-            draft = draft.updating(title: value as? String)
-        case "description":
-            draft = draft.updating(description: value as? String)
-        case "privacy":
-            draft = draft.updating(privacy: value as? MealPrivacy)
-        case "mealType":
-            draft = draft.updating(mealType: value as? MealType)
-        case "restaurant":
-            draft = draft.updating(restaurant: value as? Restaurant)
-        case "rating":
-            draft = draft.updating(rating: value as? Int)
-        case "ingredients":
-            draft = draft.updating(ingredients: value as? String)
-        case "tags":
-            draft = draft.updating(tags: value as? [String])
-        default:
-            break
-        }
-        draftService.draftMeals[mealIndex] = draft
-        draftService.saveDraftMealsToLocal(draftService.draftMeals)
-    }
-
-    // Add this computed property
-    private var liveCurrentDraft: MealWithPhotos? {
-        guard let draft = currentDraft else { return nil }
-        return draftService.draftMeals.first(where: { $0.meal.id == draft.meal.id }) ?? draft
-    }
 }
 
-// MARK: - Initial View (Camera + Collaborative Meals)
+// MARK: - Initial View
 struct InitialView: View {
     let draftService: DraftMealService
-    let onTakePhoto: (UIImage) -> Void
+    let onTakePhoto: () -> Void
     let onSelectDraft: (MealWithPhotos) -> Void
-    let onMultiplePhotos: ([UIImage]) -> Void
-    @State private var showingCamera = false
     @State private var isEditingDrafts = false
     @State private var deletingMealIds: Set<UUID> = []
-    
-
+    @State private var cameraButtonPressed = false
 
     var body: some View {
         VStack(spacing: 30) {
@@ -309,18 +305,30 @@ struct InitialView: View {
             VStack(spacing: 20) {
                 Text("📸")
                     .font(.system(size: 60))
+                    .scaleEffect(cameraButtonPressed ? 0.9 : 1.0)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.6), value: cameraButtonPressed)
+                
                 Text("Capture Your Meal")
                     .font(.title2)
                     .fontWeight(.semibold)
-                Button("Take Photo") {
-                    showingCamera = true
+                
+                Button(action: onTakePhoto) {
+                    Text("Take Photo")
                 }
                 .buttonStyle(PrimaryButtonStyle())
+                .scaleEffect(cameraButtonPressed ? 0.95 : 1.0)
+                .onLongPressGesture(minimumDuration: 0, maximumDistance: .infinity, pressing: { pressing in
+                    withAnimation(.easeInOut(duration: 0.1)) {
+                        cameraButtonPressed = pressing
+                    }
+                }, perform: {})
             }
             
             // Collaborative Meals Section
             if !draftService.draftMeals.isEmpty {
                 Divider()
+                    .transition(.opacity)
+                
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
                         Text("Continue Previous Meals")
@@ -339,6 +347,7 @@ struct InitialView: View {
                                 .foregroundColor(isEditingDrafts ? .red : .blue)
                         }
                     }
+                    
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 12) {
                             ForEach(draftService.draftMeals) { draft in
@@ -349,9 +358,9 @@ struct InitialView: View {
                                         }
                                     }
                                     .opacity(isEditingDrafts ? 0.5 : 1.0)
+                                    .scaleEffect(isEditingDrafts ? 0.95 : 1.0)
                                     .animation(.easeInOut(duration: 0.2), value: isEditingDrafts)
                                     
-                                    // Delete overlay - positioned properly inside bounds
                                     if isEditingDrafts {
                                         Button(action: {
                                             deleteMeal(draft)
@@ -366,43 +375,27 @@ struct InitialView: View {
                                                 )
                                         }
                                         .buttonStyle(.plain)
-                                        .offset(x: 8, y: -8) // Reduced offset to keep it visible
+                                        .offset(x: 8, y: -8)
                                         .transition(.scale.combined(with: .opacity))
                                     }
                                 }
                                 .scaleEffect(deletingMealIds.contains(draft.meal.id) ? 0.8 : 1.0)
                                 .opacity(deletingMealIds.contains(draft.meal.id) ? 0.0 : 1.0)
                                 .animation(.easeInOut(duration: 0.3), value: deletingMealIds.contains(draft.meal.id))
-                                .padding(.top, 8) // Add padding to accommodate the button
-                                .padding(.trailing, 8) // Add trailing padding for the button
+                                .padding(.top, 8)
+                                .padding(.trailing, 8)
                             }
                         }
-                        .padding(.horizontal, 12) // Increased horizontal padding
-                        .padding(.vertical, 4) // Add vertical padding
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 4)
                     }
                 }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
             
             Spacer()
         }
         .padding()
-        .fullScreenCover(isPresented: $showingCamera) {
-            CameraView(
-                onImageCaptured: { imageData in
-                    if let image = UIImage(data: imageData) {
-                        showingCamera = false  // Add this line
-                        onTakePhoto(image)
-                    }
-                },
-                onMultipleImagesCaptured: { images in
-                    showingCamera = false  // Add this line
-                    onMultiplePhotos(images)
-                },
-                onCancel: {
-                    showingCamera = false
-                }
-            )
-        }
     }
     
     private func deleteMeal(_ draft: MealWithPhotos) {
@@ -410,87 +403,13 @@ struct InitialView: View {
             deletingMealIds.insert(draft.meal.id)
         }
         
-        // Delay the actual deletion to allow animation to complete
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            Task {
-                do {
-                    try await draftService.deleteDraftMeal(mealId: draft.meal.id)
-                    deletingMealIds.remove(draft.meal.id)
-                } catch {
-                    // Handle error and reset state
-                    deletingMealIds.remove(draft.meal.id)
-                }
+        Task {
+            do {
+                try await draftService.deleteDraftMeal(mealId: draft.meal.id)
+                deletingMealIds.remove(draft.meal.id)
+            } catch {
+                deletingMealIds.remove(draft.meal.id)
             }
-        }
-    }
-}
-// MARK: - Multi Image Course Selection View
-struct MultiImageCourseSelectionView: View {
-    let images: [UIImage]
-    let currentIndex: Int
-    let onCourseSelected: (Course?) -> Void
-    
-    var body: some View {
-        VStack(spacing: 24) {
-            // Progress indicator
-            HStack {
-                Text("Image \(currentIndex + 1) of \(images.count)")
-                    .font(.headline)
-                Spacer()
-            }
-            .padding(.horizontal)
-            
-            // Photo Preview
-            Image(uiImage: images[currentIndex])
-                .resizable()
-                .aspectRatio(contentMode: .fill)
-                .frame(height: 200)
-                .clipped()
-                .cornerRadius(12)
-                .padding(.horizontal)
-            
-            // Course Selection
-            VStack(alignment: .leading, spacing: 16) {
-                Text("What course is this?")
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                
-                LazyVGrid(columns: [
-                    GridItem(.flexible()),
-                    GridItem(.flexible())
-                ], spacing: 12) {
-                    ForEach(Course.allCases.prefix(8), id: \.self) { course in
-                        Button(action: {
-                            onCourseSelected(course)
-                        }) {
-                            VStack(spacing: 8) {
-                                Text(course.emoji)
-                                    .font(.title)
-                                Text(course.displayName)
-                                    .font(.caption)
-                                    .multilineTextAlignment(.center)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(Color.secondary.opacity(0.1))
-                            .cornerRadius(12)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                
-                // Skip button
-                Button("Skip for now") {
-                    onCourseSelected(nil)
-                }
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(Color.secondary.opacity(0.2))
-                .cornerRadius(12)
-            }
-            .padding(.horizontal)
-            
-            Spacer()
         }
     }
 }
@@ -500,9 +419,11 @@ struct CourseSelectionView: View {
     let capturedImage: UIImage
     let onCourseSelected: (Course?) -> Void
     
+    @State private var selectedCourse: Course?
+    @State private var animatingOut = false
+    
     var body: some View {
         VStack(spacing: 24) {
-            // Photo Preview
             Image(uiImage: capturedImage)
                 .resizable()
                 .aspectRatio(contentMode: .fill)
@@ -510,8 +431,10 @@ struct CourseSelectionView: View {
                 .clipped()
                 .cornerRadius(12)
                 .padding(.horizontal)
+                .scaleEffect(animatingOut ? 0.95 : 1.0)
+                .opacity(animatingOut ? 0.8 : 1.0)
+                .animation(.easeInOut(duration: 0.2), value: animatingOut)
             
-            // Course Selection
             VStack(alignment: .leading, spacing: 16) {
                 Text("What course is this?")
                     .font(.title2)
@@ -522,27 +445,24 @@ struct CourseSelectionView: View {
                     GridItem(.flexible())
                 ], spacing: 12) {
                     ForEach(Course.allCases.prefix(8), id: \.self) { course in
-                        Button(action: {
-                            onCourseSelected(course)
-                        }) {
-                            VStack(spacing: 8) {
-                                Text(course.emoji)
-                                    .font(.title)
-                                Text(course.displayName)
-                                    .font(.caption)
-                                    .multilineTextAlignment(.center)
+                        CourseButton(
+                            course: course,
+                            isSelected: selectedCourse == course,
+                            action: {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    selectedCourse = course
+                                    animatingOut = true
+                                }
+                                onCourseSelected(course)
                             }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(Color.secondary.opacity(0.1))
-                            .cornerRadius(12)
-                        }
-                        .buttonStyle(.plain)
+                        )
                     }
                 }
                 
-                // Skip button
                 Button("Skip for now") {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        animatingOut = true
+                    }
                     onCourseSelected(nil)
                 }
                 .frame(maxWidth: .infinity)
@@ -554,126 +474,238 @@ struct CourseSelectionView: View {
             
             Spacer()
         }
+        .navigationTitle("Select Course")
+    }
+}
+
+// MARK: - Multi Image Course Selection View
+struct MultiImageCourseSelectionView: View {
+    let images: [UIImage]
+    let currentIndex: Int
+    let onCourseSelected: (Course?) -> Void
+    
+    @State private var selectedCourse: Course?
+    @State private var animatingOut = false
+    
+    var body: some View {
+        VStack(spacing: 24) {
+            HStack {
+                Text("Image \(currentIndex + 1) of \(images.count)")
+                    .font(.headline)
+                Spacer()
+            }
+            .padding(.horizontal)
+            
+            Image(uiImage: images[currentIndex])
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(height: 200)
+                .clipped()
+                .cornerRadius(12)
+                .padding(.horizontal)
+                .scaleEffect(animatingOut ? 0.95 : 1.0)
+                .opacity(animatingOut ? 0.8 : 1.0)
+                .animation(.easeInOut(duration: 0.2), value: animatingOut)
+            
+            VStack(alignment: .leading, spacing: 16) {
+                Text("What course is this?")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                
+                LazyVGrid(columns: [
+                    GridItem(.flexible()),
+                    GridItem(.flexible())
+                ], spacing: 12) {
+                    ForEach(Course.allCases.prefix(8), id: \.self) { course in
+                        CourseButton(
+                            course: course,
+                            isSelected: selectedCourse == course,
+                            action: {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    selectedCourse = course
+                                    animatingOut = true
+                                }
+                                onCourseSelected(course)
+                            }
+                        )
+                    }
+                }
+                
+                Button("Skip for now") {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        animatingOut = true
+                    }
+                    onCourseSelected(nil)
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(Color.secondary.opacity(0.2))
+                .cornerRadius(12)
+            }
+            .padding(.horizontal)
+            
+            Spacer()
+        }
+        .navigationTitle("Select Course")
+    }
+}
+
+// MARK: - Course Button Component
+struct CourseButton: View {
+    let course: Course
+    let isSelected: Bool
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                Text(course.emoji)
+                    .font(.title)
+                Text(course.displayName)
+                    .font(.caption)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            .background(isSelected ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.1))
+            .cornerRadius(12)
+            .scaleEffect(isSelected ? 0.95 : 1.0)
+        }
+        .buttonStyle(.plain)
     }
 }
 
 // MARK: - Next Action View
 struct NextActionView: View {
-    let currentDraft: MealWithPhotos
+    let draftId: UUID
     let onTakeAnother: () -> Void
     let onContinueLater: () -> Void
     let onFinalize: () -> Void
     
     @State private var isEditMode = false
     @State private var showingFullScreenImage: IdentifiableImage?
-    @State private var showDeleteAlert: Bool = false
+    @State private var successAnimation = false
     @State private var photoToDelete: Photo?
     @EnvironmentObject private var draftService: DraftMealService
     
-    // Wrapper to make UIImage Identifiable
     struct IdentifiableImage: Identifiable {
         let id = UUID()
         let image: UIImage
     }
     
-    // Get the live draft data from the service
-    private var liveDraft: MealWithPhotos? {
-        draftService.draftMeals.first { $0.meal.id == currentDraft.meal.id }
+    private var currentDraft: MealWithPhotos? {
+        draftService.draftMeals.first { $0.meal.id == draftId }
     }
     
     private var photoCount: Int {
-        liveDraft?.photos.count ?? currentDraft.photos.count
+        currentDraft?.photos.count ?? 0
     }
     
     private var photos: [Photo] {
-        liveDraft?.photos ?? currentDraft.photos
+        currentDraft?.photos ?? []
     }
     
     var body: some View {
         VStack(spacing: 24) {
-            // Success indicator
-            successIndicator
+            VStack(spacing: 16) {
+                Text("✅")
+                    .font(.system(size: 60))
+                    .scaleEffect(successAnimation ? 1.2 : 1.0)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.6), value: successAnimation)
+                
+                Text("Photo Added!")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                
+                Text("You now have \(photoCount) photo\(photoCount == 1 ? "" : "s")")
+                    .foregroundColor(.secondary)
+            }
+            .onAppear {
+                withAnimation {
+                    successAnimation = true
+                }
+            }
+            .onDisappear {
+                successAnimation = false
+            }
             
-            // Photos section
-            photosSection
+            VStack(spacing: 12) {
+                if photoCount > 0 {
+                    HStack {
+                        Spacer()
+                        Button(isEditMode ? "Done" : "Edit") {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                isEditMode.toggle()
+                            }
+                        }
+                        .foregroundColor(.blue)
+                        .font(.subheadline)
+                    }
+                    .padding(.horizontal)
+                }
+                
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        LazyHStack(spacing: 12) {
+                            ForEach(photos) { photo in
+                                photoThumbnail(for: photo)
+                                    .transition(.asymmetric(
+                                        insertion: .scale.combined(with: .opacity),
+                                        removal: .scale(scale: 0.8).combined(with: .opacity)
+                                    ))
+                                    .id(photo.id)
+                            }
+                            
+                            Button(action: onTakeAnother) {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .fill(Color.secondary.opacity(0.05))
+                                    )
+                                    .frame(width: 67.5, height: 120)
+                                    .overlay(
+                                        Image(systemName: "plus")
+                                            .font(.system(size: 24))
+                                            .foregroundColor(.secondary)
+                                    )
+                            }
+                            .id("addButton")
+                        }
+                        .padding(.horizontal)
+                        .padding(.vertical, 8)
+                    }
+                    .frame(height: 136)
+                    .clipped()
+                    .onAppear {
+                        withAnimation(.easeInOut(duration: 0.5)) {
+                            proxy.scrollTo("addButton", anchor: .trailing)
+                        }
+                    }
+                }
+            }
             
-            // Action buttons
-            actionButtons
+            VStack(spacing: 16) {
+                Button("Add More Courses Later") {
+                    onContinueLater()
+                }
+                .buttonStyle(SecondaryButtonStyle())
+                
+                Button("Finalize & Publish") {
+                    onFinalize()
+                }
+                .buttonStyle(AccentButtonStyle())
+                .disabled(photos.isEmpty)
+                .opacity(photos.isEmpty ? 0.5 : 1.0)
+            }
+            .padding(.horizontal)
             
             Spacer()
         }
         .padding()
-        .sheet(item: $showingFullScreenImage) { identifiableImage in
-            FullScreenImageView(image: identifiableImage.image)
-        }
-    }
-    
-    // MARK: - Success Indicator
-    private var successIndicator: some View {
-        VStack(spacing: 16) {
-            Text("✅")
-                .font(.system(size: 60))
-            
-            Text("Photo Added!")
-                .font(.title2)
-                .fontWeight(.semibold)
-            
-            Text("You now have \(photoCount) photo\(photoCount == 1 ? "" : "s")")
-                .foregroundColor(.secondary)
-        }
-    }
-    
-    // MARK: - Photos Section
-    private var photosSection: some View {
-        VStack(spacing: 12) {
-            // Edit button
-            if photoCount > 0 {
-                editButton
-            }
-            
-            // Photo scroll view
-            photoScrollView
-        }
-    }
-    
-    private var editButton: some View {
-        HStack {
-            Spacer()
-            Button(isEditMode ? "Done" : "Edit") {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    isEditMode.toggle()
-                }
-            }
-            .foregroundColor(.blue)
-            .font(.subheadline)
-        }
-        .padding(.horizontal)
-    }
-    
-    private var photoScrollView: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 12) {
-                    // Existing photos
-                    ForEach(photos) { photo in
-                        photoThumbnail(for: photo)
-                    }
-                    
-                    // Plus button
-                    addPhotoButton
-                }
-                .padding(.horizontal)
-                .padding(.vertical, 8) // Add vertical padding to prevent clipping
-            }
-            .frame(height: 136) // Increased height to accommodate delete button
-            .clipped() // Ensure nothing extends beyond bounds
-            .onAppear {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    withAnimation(.easeInOut(duration: 0.5)) {
-                        proxy.scrollTo("addButton", anchor: .trailing)
-                    }
-                }
-            }
+        .navigationTitle("Next Steps")
+        .sheet(item: $showingFullScreenImage) {
+            FullScreenImageView(image: $0.image)
         }
     }
     
@@ -697,7 +729,10 @@ struct NextActionView: View {
                                 Label("View", systemImage: "eye")
                             }
                             Button(role: .destructive) {
-                                removePhoto(photo)
+                                withAnimation(.easeInOut(duration: 0.3)) {
+                                    photoToDelete = photo
+                                    removePhoto(photo)
+                                }
                             } label: {
                                 Label("Delete", systemImage: "trash")
                             }
@@ -708,91 +743,55 @@ struct NextActionView: View {
                         .aspectRatio(16/9, contentMode: .fill)
                         .frame(width: 67.5, height: 120)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .opacity(photoToDelete?.id == photo.id ? 0.3 : 1.0)
+                        .scaleEffect(photoToDelete?.id == photo.id ? 0.8 : 1.0)
                         .onTapGesture { }
                 }
                 if isEditMode {
-                    deleteButton(for: photo)
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            photoToDelete = photo
+                            removePhoto(photo)
+                        }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 18))
+                            .foregroundColor(.red)
+                            .background(Color.white, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .frame(width: 24, height: 24)
+                    .position(x: 67.5 - 8, y: 8)
+                    .transition(.scale.combined(with: .opacity))
                 }
             } else {
-                // Placeholder for failed image loads
                 RoundedRectangle(cornerRadius: 8)
                     .fill(Color.secondary.opacity(0.2))
                     .frame(width: 67.5, height: 120)
             }
         }
-    }
-    
-    private func deleteButton(for photo: Photo) -> some View {
-        Button {
-            removePhoto(photo)
-        } label: {
-            Image(systemName: "xmark.circle.fill")
-                .font(.system(size: 18))
-                .foregroundColor(.red)
-                .background(Color.white, in: Circle())
-        }
-        .buttonStyle(.plain)
-        .frame(width: 24, height: 24)
-        .position(x: 67.5 - 8, y: 8) // Position exactly where we want it
-        .transition(.opacity)
-    }
-    
-    private var addPhotoButton: some View {
-        Button(action: onTakeAnother) {
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.secondary.opacity(0.05))
-                )
-                .frame(width: 67.5, height: 120)
-                .overlay(
-                    Image(systemName: "plus")
-                        .font(.system(size: 24))
-                        .foregroundColor(.secondary)
-                )
-        }
-        .id("addButton")
-    }
-    
-    // MARK: - Action Buttons
-    private var actionButtons: some View {
-        VStack(spacing: 16) {
-            Button("Add More Courses Later") {
-                onContinueLater()
-            }
-            .buttonStyle(SecondaryButtonStyle())
-            
-            Button("Finalize & Publish") {
-                onFinalize()
-            }
-            .buttonStyle(AccentButtonStyle())
-            .disabled(photos.isEmpty)
-            .opacity(photos.isEmpty ? 0.5 : 1.0)
-        }
-        .padding(.horizontal)
+        .animation(.easeInOut(duration: 0.3), value: photoToDelete?.id == photo.id)
     }
 
-    
     private func removePhoto(_ photo: Photo) {
-        // Remove photo from local state
-        if let mealIndex = draftService.draftMeals.firstIndex(where: { $0.meal.id == currentDraft.meal.id }) {
-            let currentMeal = draftService.draftMeals[mealIndex]
-            let updatedPhotos = currentMeal.photos.filter { $0.id != photo.id }
-            let updatedMeal = MealWithPhotos(meal: currentMeal.meal, photos: updatedPhotos)
-            draftService.draftMeals[mealIndex] = updatedMeal
-            
-            // Save to local storage
-            draftService.saveDraftMealsToLocal(draftService.draftMeals)
-            
-            // Delete local image file
-            let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-            let filePath = documentsDirectory.appendingPathComponent("draft_photos").appendingPathComponent(photo.url)
-            try? FileManager.default.removeItem(at: filePath)
-        }
+        guard let draft = currentDraft,
+              let mealIndex = draftService.draftMeals.firstIndex(where: { $0.meal.id == draft.meal.id }) else { return }
         
-        // Exit edit mode after removing
-        isEditMode = false
+        let currentMeal = draftService.draftMeals[mealIndex]
+        let updatedPhotos = currentMeal.photos.filter { $0.id != photo.id }
+        let updatedMeal = MealWithPhotos(meal: currentMeal.meal, photos: updatedPhotos)
+        draftService.draftMeals[mealIndex] = updatedMeal
+        
+        draftService.saveDraftMealsToLocal(draftService.draftMeals)
+        
+        let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let filePath = documentsDirectory.appendingPathComponent("draft_photos").appendingPathComponent(photo.url)
+        try? FileManager.default.removeItem(at: filePath)
+        
+        photoToDelete = nil
+        if photos.count == 1 {
+            isEditMode = false
+        }
     }
     
     private func loadLocalImageData(fileName: String) -> Data? {
@@ -802,317 +801,310 @@ struct NextActionView: View {
     }
 }
 
-// MARK: - Full Screen Image View
-struct FullScreenImageView: View {
-    let image: UIImage
-    @Environment(\.dismiss) private var dismiss
-    
-    var body: some View {
-        NavigationView {
-            GeometryReader { geometry in
-                Image(uiImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: geometry.size.width, height: geometry.size.height)
-                    .background(Color.black)
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Meal Details View (Publishing)
+// MARK: - Meal Details View
 struct MealDetailsView: View {
-    let currentDraft: MealWithPhotos
-    let onPublish: (Meal) -> Void  // Changed to take complete data
-    let onBack: (MealWithPhotos) -> Void
-    let onSubmitField: (String, Any) -> Void
+    let draftId: UUID
+    let onPublish: (Meal) -> Void
     
-    // Initialize state from currentDraft
-    @State private var title: String
-    @State private var description: String
-    @State private var privacy: MealPrivacy
-    @State private var selectedMealType: MealType
+    @State private var title: String = ""
+    @State private var description: String = ""
+    @State private var privacy: MealPrivacy = .public
+    @State private var selectedMealType: MealType = .homemade
     @State private var selectedRestaurant: Restaurant?
     @State private var showingRestaurantSearch = false
     @State private var rating: Int?
-    @State private var ingredients: String?
+    @State private var ingredients: String = ""
     @State private var newTag: String = ""
-    @State private var tags: [String]
+    @State private var tags: [String] = []
+    @State private var isPublishing = false
     
     @Environment(\.dismiss) private var dismiss
+    @FocusState private var focusedField: Field?
+    @EnvironmentObject private var draftService: DraftMealService
     
-    // Custom initializer to set initial state
-    init(currentDraft: MealWithPhotos, onPublish: @escaping (Meal) -> Void, onBack: @escaping (MealWithPhotos) -> Void, onSubmitField: @escaping (String, Any) -> Void) {
-        self.currentDraft = currentDraft
-        self.onPublish = onPublish
-        self.onBack = onBack
-        self.onSubmitField = onSubmitField
-        // Initialize state from currentDraft.meal
-        _title = State(initialValue: currentDraft.meal.title ?? "")
-        _description = State(initialValue: currentDraft.meal.description ?? "")
-        _privacy = State(initialValue: currentDraft.meal.privacy)
-        _selectedMealType = State(initialValue: currentDraft.meal.mealType)
-        _selectedRestaurant = State(initialValue: currentDraft.meal.restaurant)
-        _rating = State(initialValue: currentDraft.meal.rating ?? nil)
-        _ingredients = State(initialValue: currentDraft.meal.ingredients ?? nil)
-        _tags = State(initialValue: currentDraft.meal.tags ?? [])
+    enum Field {
+        case title, description, ingredients, tag
     }
-
-
+    
+    private var currentDraft: MealWithPhotos? {
+        draftService.draftMeals.first { $0.meal.id == draftId }
+    }
+    
     var body: some View {
-        ScrollView {
-            VStack(spacing: 24) {
-                // Photos Preview
-                photosPreviewSection
-                
-                // Form Fields
-                VStack(alignment: .leading, spacing: 16) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Title")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                        TextField("What did you eat?", text: $title)
-                            .textFieldStyle(.roundedBorder)
-                            .onSubmit {
-                                onSubmitField("title", title)
+        Group {
+            if let draft = currentDraft {
+                ScrollView {
+                    VStack(spacing: 24) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Your Photos (\(draft.photos.count))")
+                                .font(.headline)
+                            
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 12) {
+                                    ForEach(draft.photos) { photo in
+                                        if let localImageData = loadLocalImageData(fileName: photo.url),
+                                           let uiImage = UIImage(data: localImageData) {
+                                            Image(uiImage: uiImage)
+                                                .resizable()
+                                                .aspectRatio(contentMode: .fill)
+                                                .frame(width: 90, height: 120)
+                                                .clipped()
+                                                .cornerRadius(8)
+                                                .transition(.scale.combined(with: .opacity))
+                                        } else {
+                                            RoundedRectangle(cornerRadius: 8)
+                                                .fill(Color.secondary.opacity(0.3))
+                                                .frame(width: 90, height: 120)
+                                        }
+                                    }
+                                }
+                                .padding(.horizontal, 2)
                             }
-                    }
-                    
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Description")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                        TextField("Tell us about it...", text: $description, axis: .vertical)
-                            .textFieldStyle(.roundedBorder)
-                            .lineLimit(3...6)
-                            .onSubmit {
-                                onSubmitField("description", description)
-                            }
-                    }
-                    
-
-                    }
-                mealTypeSection
-
-                if selectedMealType == .restaurant {
-                    restaurantSection
-                }
-                
-                mealDetailsSection
-
-                tagsSection
-                
-                // Publish Button
-                Button("Publish Meal") {
-                    let updatedMeal = currentDraft.updating(
-                        title: title,
-                        description: description,
-                        privacy: privacy,
-                        mealType: selectedMealType,
-                        restaurant: selectedRestaurant,
-                        rating: rating,
-                        ingredients: ingredients,
-                        tags: tags
-                    )
-                    onPublish(updatedMeal.meal)
-                }
-                .buttonStyle(PrimaryButtonStyle())
-            }
-            .padding()
-        }
-        .contentShape(Rectangle()) // Makes the whole area tappable
-        .onTapGesture {
-            hideKeyboard()
-        }
-        .navigationBarBackButtonHidden(true)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button(action: {
-                    let updatedDraft = currentDraft.updating(
-                        title: title,
-                        description: description,
-                        privacy: privacy,
-                        mealType: selectedMealType,
-                        restaurant: selectedRestaurant,
-                        rating: rating,
-                        ingredients: ingredients,
-                        tags: tags
-                    )
-                    onBack(updatedDraft)
-                }) {
-                    HStack {
-                        Image(systemName: "chevron.left")
-                        Text("Back")
-                    }
-                }
-            }
-        }
-        .sheet(isPresented: $showingRestaurantSearch) {
-            // Replace this with your actual restaurant search view
-            RestaurantSearchView(selectedRestaurant: $selectedRestaurant)
-        }
-    }
-
-        private var photosPreviewSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Your Photos (\(currentDraft.photos.count))")
-                .font(.headline)
-            
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(currentDraft.photos) { photo in
-                        if let localImageData = loadLocalImageData(fileName: photo.url),
-                           let uiImage = UIImage(data: localImageData) {
-                            Image(uiImage: uiImage)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: 90, height: 120) // 4:3 ratio for better visibility
-                                .clipped()
-                                .cornerRadius(8)
-                        } else {
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(Color.secondary.opacity(0.3))
-                                .frame(width: 90, height: 120)
                         }
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        
+                        VStack(alignment: .leading, spacing: 16) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Title")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                TextField("What did you eat?", text: $title)
+                                    .textFieldStyle(.roundedBorder)
+                                    .focused($focusedField, equals: .title)
+                                    .onSubmit {
+                                        updateDraft()
+                                        focusedField = .description
+                                    }
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Description")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                TextField("Tell us about it...", text: $description, axis: .vertical)
+                                    .textFieldStyle(.roundedBorder)
+                                    .lineLimit(3...6)
+                                    .focused($focusedField, equals: .description)
+                                    .onSubmit {
+                                        updateDraft()
+                                    }
+                            }
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Meal Type")
+                                .font(.headline)
+                            
+                            Picker("Meal Type", selection: $selectedMealType) {
+                                ForEach(MealType.allCases, id: \.self) { type in
+                                    Text(type.rawValue.capitalized)
+                                        .tag(type)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            .onChange(of: selectedMealType) { _ in
+                                updateDraft()
+                            }
+                        }
+
+                        if selectedMealType == .restaurant {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("Restaurant")
+                                    .font(.headline)
+                                
+                                if let restaurant = selectedRestaurant {
+                                    RestaurantCardView(restaurant: restaurant) {
+                                        withAnimation(.easeInOut(duration: 0.2)) {
+                                            selectedRestaurant = nil
+                                            updateDraft()
+                                        }
+                                    }
+                                    .transition(.asymmetric(
+                                        insertion: .scale.combined(with: .opacity),
+                                        removal: .scale(scale: 0.8).combined(with: .opacity)
+                                    ))
+                                } else {
+                                    Button(action: {
+                                        showingRestaurantSearch = true
+                                    }) {
+                                        HStack {
+                                            Image(systemName: "magnifyingglass")
+                                            Text("Search for restaurant")
+                                            Spacer()
+                                            Image(systemName: "chevron.right")
+                                        }
+                                        .foregroundColor(.gray)
+                                        .padding()
+                                        .background(Color(.systemGray6))
+                                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                                    }
+                                    .transition(.asymmetric(
+                                        insertion: .scale.combined(with: .opacity),
+                                        removal: .scale(scale: 0.8).combined(with: .opacity)
+                                    ))
+                                }
+                            }
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text("Details")
+                                .font(.headline)
+                            
+                            VStack(spacing: 12) {                
+                                if selectedMealType == .restaurant {
+                                    HStack {
+                                        Text("Rating")
+                                        Spacer()
+                                        StarRatingView(rating: $rating) { newRating in
+                                            updateDraft()
+                                        }
+                                    }
+                                    .transition(.move(edge: .leading).combined(with: .opacity))
+                                 }
+                                 
+                                 if selectedMealType == .homemade {
+                                     TextField("Ingredients (optional)", text: $ingredients, axis: .vertical)
+                                         .textFieldStyle(.roundedBorder)
+                                         .lineLimit(2...4)
+                                         .focused($focusedField, equals: .ingredients)
+                                         .onSubmit {
+                                             updateDraft()
+                                         }
+                                         .transition(.move(edge: .leading).combined(with: .opacity))
+                                 }
+                            }
+                        }
+
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Tags")
+                                .font(.headline)
+                            
+                            HStack {
+                                TextField("Add tag", text: $newTag)
+                                    .textFieldStyle(.roundedBorder)
+                                    .focused($focusedField, equals: .tag)
+                                    .onSubmit {
+                                        addTag()
+                                    }
+                                
+                                Button("Add", action: {
+                                    addTag()
+                                })
+                                .disabled(newTag.isEmpty)
+                            }
+                            
+                            if !tags.isEmpty {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack {
+                                        ForEach(tags, id: \.self) { tag in
+                                            TagView(tag: tag) {
+                                                withAnimation(.easeOut(duration: 0.2)) {
+                                                    tags.removeAll { $0 == tag }
+                                                    updateDraft()
+                                                }
+                                            }
+                                            .transition(.asymmetric(
+                                                insertion: .scale.combined(with: .opacity),
+                                                removal: .scale(scale: 0.8).combined(with: .opacity)
+                                            ))
+                                        }
+                                    }
+                                    .padding(.horizontal, 2)
+                                }
+                            }
+                        }
+                        
+                        Button(action: {
+                            isPublishing = true
+                            if let updatedDraft = currentDraft {
+                                onPublish(updatedDraft.meal)
+                            }
+                        }) {
+                            if isPublishing {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            } else {
+                                Text("Publish Meal")
+                            }
+                        }
+                        .buttonStyle(PrimaryButtonStyle())
+                        .disabled(isPublishing)
+                        .opacity(isPublishing ? 0.7 : 1.0)
                     }
+                    .padding()
                 }
-                .padding(.horizontal, 2)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    focusedField = nil
+                }
+                .onAppear {
+                    // Initialize state from draft
+                    title = draft.meal.title ?? ""
+                    description = draft.meal.description ?? ""
+                    privacy = draft.meal.privacy
+                    selectedMealType = draft.meal.mealType
+                    selectedRestaurant = draft.meal.restaurant
+                    rating = draft.meal.rating
+                    ingredients = draft.meal.ingredients ?? ""
+                    tags = draft.meal.tags ?? []
+                }
+                .onChange(of: selectedRestaurant) { _ in
+                    updateDraft()
+                }
+                .sheet(isPresented: $showingRestaurantSearch) {
+                    RestaurantSearchView(selectedRestaurant: $selectedRestaurant) 
+                }
+            } else {
+                Text("Draft not found")
+                    .foregroundColor(.secondary)
             }
         }
     }
+    
     private func loadLocalImageData(fileName: String) -> Data? {
         let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         let filePath = documentsDirectory.appendingPathComponent("draft_photos").appendingPathComponent(fileName)
         return try? Data(contentsOf: filePath)
-    }
-    private var mealDetailsSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Details")
-                .font(.headline)
-            
-            VStack(spacing: 12) {                
-                if selectedMealType == .restaurant {
-                    HStack {
-                        Text("Rating")
-                        Spacer()
-                        StarRatingView(rating: $rating)
-                    }
-                 }
-                 
-                 if selectedMealType == .homemade {
-                     TextField("Ingredients (optional)", text: Binding(
-                         get: { ingredients ?? "" },
-                         set: { ingredients = $0.isEmpty ? nil : $0 }
-                     ), axis: .vertical)
-                         .textFieldStyle(.roundedBorder)
-                         .lineLimit(2...4)
-                         .onSubmit {
-                             onSubmitField("ingredients", ingredients)
-                         }
-                 }
-            }
-        }
     }
     
     private func addTag() {
         let trimmedTag = newTag.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmedTag.isEmpty && !tags.contains(trimmedTag) {
-            tags.append(trimmedTag)
+            withAnimation(.easeInOut(duration: 0.2)) {
+                tags.append(trimmedTag)
+            }
             newTag = ""
+            updateDraft()
         }
     }
     
-    private var tagsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Tags")
-                .font(.headline)
-            
-            HStack {
-                TextField("Add tag", text: $newTag)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit {
-                        addTag()
-                        onSubmitField("tags", tags)
-                    }
-                
-                Button("Add", action: addTag)
-                    .disabled(newTag.isEmpty)
-            }
-            
-            if !tags.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack {
-                        ForEach(tags, id: \.self) { tag in
-                            TagView(tag: tag) {
-                                tags.removeAll { $0 == tag }
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 2)
-                }
-            }
-        }
+    private func updateDraft() {
+        guard let draft = currentDraft,
+              let idx = draftService.draftMeals.firstIndex(where: { $0.meal.id == draft.meal.id }) else { return }
+        
+        let updatedDraft = draft.updating(
+            title: title.isEmpty ? nil : title,
+            description: description.isEmpty ? nil : description,
+            privacy: privacy,
+            mealType: selectedMealType,
+            restaurant: selectedRestaurant,
+            rating: rating,
+            ingredients: ingredients.isEmpty ? nil : ingredients,
+            tags: tags.isEmpty ? nil : tags
+        )
+        
+        draftService.draftMeals[idx] = updatedDraft
+        draftService.saveDraftMealsToLocal(draftService.draftMeals)
     }
-
-    private var mealTypeSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Meal Type")
-                .font(.headline)
-            
-            Picker("Meal Type", selection: $selectedMealType) {
-                ForEach(MealType.allCases, id: \.self) { type in
-                    Text(type.rawValue.capitalized)
-                        .tag(type)
-                }
-            }
-            .pickerStyle(.segmented)
-        }
-    }
-
-        private var restaurantSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Restaurant")
-                .font(.headline)
-            
-            if let restaurant = selectedRestaurant {
-                RestaurantCardView(restaurant: restaurant) {
-                    selectedRestaurant = nil
-                }
-            } else {
-                Button(action: {
-                    showingRestaurantSearch = true
-                }) {
-                    HStack {
-                        Image(systemName: "magnifyingglass")
-                        Text("Search for restaurant")
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                    }
-                    .foregroundColor(.gray)
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                }
-            }
-        }
-    }
-    
-    // Remove saveDraftField()
 }
-
 
 // MARK: - Supporting Views
 struct DraftMealThumbnail: View {
     let draft: MealWithPhotos
     let onTap: () -> Void
+    
+    @State private var isPressed = false
     
     var body: some View {
         Button(action: onTap) {
@@ -1145,15 +1137,81 @@ struct DraftMealThumbnail: View {
                     .font(.caption2)
                     .foregroundColor(.secondary)
             }
+            .scaleEffect(isPressed ? 0.95 : 1.0)
         }
         .buttonStyle(.plain)
+        .onLongPressGesture(minimumDuration: 0, maximumDistance: .infinity, pressing: { pressing in
+            withAnimation(.easeInOut(duration: 0.1)) {
+                isPressed = pressing
+            }
+        }, perform: {})
     }
     
-    // **ADD THIS helper method**
     private func loadLocalImageData(fileName: String) -> Data? {
         let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         let filePath = documentsDirectory.appendingPathComponent("draft_photos").appendingPathComponent(fileName)
         return try? Data(contentsOf: filePath)
+    }
+}
+
+// MARK: - Full Screen Image View
+struct FullScreenImageView: View {
+    let image: UIImage
+    @Environment(\.dismiss) private var dismiss
+    @State private var scale: CGFloat = 1.0
+    @State private var lastScale: CGFloat = 1.0
+    @State private var offset: CGSize = .zero
+    @State private var lastOffset: CGSize = .zero
+    
+    var body: some View {
+        NavigationView {
+            GeometryReader { geometry in
+                ZStack {
+                    Color.black
+                        .ignoresSafeArea()
+                    
+                    Image(uiImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .scaleEffect(scale)
+                        .offset(offset)
+                        .gesture(
+                            MagnificationGesture()
+                                .onChanged { value in
+                                    scale = lastScale * value
+                                }
+                                .onEnded { value in
+                                    withAnimation(.spring()) {
+                                        scale = min(max(scale, 1), 4)
+                                        lastScale = scale
+                                    }
+                                }
+                                .simultaneously(with: DragGesture()
+                                    .onChanged { value in
+                                        offset = CGSize(
+                                            width: lastOffset.width + value.translation.width,
+                                            height: lastOffset.height + value.translation.height
+                                        )
+                                    }
+                                    .onEnded { value in
+                                        lastOffset = offset
+                                    }
+                                )
+                        )
+                        .animation(.interactiveSpring(), value: scale)
+                }
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                    .foregroundColor(.white)
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
     }
 }
 
@@ -1166,7 +1224,8 @@ struct PrimaryButtonStyle: ButtonStyle {
             .background(Color.accentColor)
             .foregroundColor(.white)
             .cornerRadius(12)
-            .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
+            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
+            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
     }
 }
 
@@ -1178,7 +1237,8 @@ struct SecondaryButtonStyle: ButtonStyle {
             .background(Color.secondary.opacity(0.1))
             .foregroundColor(.primary)
             .cornerRadius(12)
-            .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
+            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
+            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
     }
 }
 
@@ -1190,12 +1250,16 @@ struct AccentButtonStyle: ButtonStyle {
             .background(Color.green)
             .foregroundColor(.white)
             .cornerRadius(12)
-            .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
+            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
+            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
     }
 }
+
 struct TagView: View {
     let tag: String
     let onDelete: () -> Void
+    
+    @State private var isPressed = false
     
     var body: some View {
         HStack(spacing: 4) {
@@ -1212,27 +1276,42 @@ struct TagView: View {
         .background(Color.orange.opacity(0.2))
         .foregroundColor(.orange)
         .clipShape(Capsule())
+        .scaleEffect(isPressed ? 0.9 : 1.0)
+        .onLongPressGesture(minimumDuration: 0, maximumDistance: .infinity, pressing: { pressing in
+            withAnimation(.easeInOut(duration: 0.1)) {
+                isPressed = pressing
+            }
+        }, perform: {})
     }
 }
 
 struct StarRatingView: View {
     @Binding var rating: Int?
+    var onRatingChange: ((Int?) -> Void)?
     
     var body: some View {
         HStack(spacing: 4) {
             if let rate = rating {
                 ForEach(1...5, id: \.self) { star in
                     Button(action: {
-                        rating = star
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            rating = star
+                            onRatingChange?(star)
+                        }
                     }) {
                         Image(systemName: star <= rate ? "star.fill" : "star")
                             .foregroundColor(star <= rate ? .yellow : .gray)
+                            .scaleEffect(star == rate ? 1.2 : 1.0)
+                            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: rating)
                     }
                 }
             } else {
                 ForEach(1...5, id: \.self) { star in
                     Button(action: {
-                        rating = star
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            rating = star
+                            onRatingChange?(star)
+                        }
                     }) {
                         Image(systemName: "star")
                             .foregroundColor(.gray)
