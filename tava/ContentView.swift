@@ -8,24 +8,24 @@
 import SwiftUI
 
 struct ContentView: View {
-    @StateObject private var supabase = SupabaseClient.shared
-    @StateObject private var draftMealService = DraftMealService()
+    @EnvironmentObject var supabase: SupabaseClient
+    @AppStorage("hasCompletedOnboarding") var hasCompletedOnboarding: Bool = false
 
-    
     var body: some View {
         Group {
-            if supabase.isAuthenticated {
-                MainTabView()
-            } else {
+            if !hasCompletedOnboarding {
+                OnboardingView(onFinish: {
+                    hasCompletedOnboarding = true
+                })
+            } else if !supabase.isAuthenticated {
                 AuthView()
+            } else {
+                MainTabView()
             }
         }
-        .preferredColorScheme(.dark)
-        .environmentObject(supabase)
-        .environmentObject(draftMealService)
     }
-        
 }
+
 
 struct AuthView: View {
     @EnvironmentObject var supabase: SupabaseClient

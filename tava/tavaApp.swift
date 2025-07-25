@@ -9,9 +9,13 @@ import SwiftUI
 
 @main
 struct tavaApp: App {
+    @StateObject private var supabase = SupabaseClient.shared
+
+
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environmentObject(supabase)
                 .environmentObject(LocationService())
                 .environmentObject(MealService())
         }
