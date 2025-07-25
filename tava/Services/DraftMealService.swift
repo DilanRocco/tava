@@ -12,6 +12,7 @@ import Supabase
 class DraftMealService: ObservableObject {
     private let supabase = SupabaseClient.shared.client
     private let localStorageKey = "draft_meals"
+    private var googlePlacesService: GooglePlacesService
     
     @Published var draftMeals: [MealWithPhotos] = []
     @Published var isLoading = false
@@ -23,6 +24,7 @@ class DraftMealService: ObservableObject {
     }
     
     init() {
+        self.googlePlacesService = GooglePlacesService()
         loadDraftMeals()
     }
     
@@ -257,13 +259,118 @@ class DraftMealService: ObservableObject {
             
             let draftMeal = draftMeals[mealIndex]
             
-            // First, create the meal in the database
+            // Handle restaurant creation if needed
+            let restaurantId = try await ensureRestaurantExists(for: meal.restaurant)
             
-            print("meal.id: \(meal.id)")
+            // Create and insert the meal
+            try await createMealInDatabase(meal: meal, restaurantId: restaurantId)
+            
+            // Upload photos and create photo records
+            try await uploadMealPhotos(mealId: meal.id, photos: draftMeal.photos)
+            
+            // Clean up draft
+            removeDraftMeal(mealId: meal.id)
+        }
+        
+        // MARK: - Helper Functions
+        
+        private func ensureRestaurantExists(for restaurant: Restaurant?) async throws -> String? {
+            guard let restaurant = restaurant else { return nil }
+            
+            // Check if restaurant already exists
+            if let existingId = try await findExistingRestaurant(googlePlaceId: restaurant.googlePlaceId) {
+                print("✅ Restaurant already exists: \(existingId)")
+                return existingId
+            }
+            
+            // Create new restaurant
+            print("🆕 Creating new restaurant: \(restaurant.name)")
+            return try await createRestaurantInDatabase(restaurant)
+        }
+        
+        private func findExistingRestaurant(googlePlaceId: String?) async throws -> String? {
+            guard let googlePlaceId = googlePlaceId else { return nil }
+            
+            struct RestaurantIdResponse: Codable {
+                let id: String
+            }
+            
+            let existing: [RestaurantIdResponse] = try await supabase
+                .from("restaurants")
+                .select("id")
+                .eq("google_place_id", value: googlePlaceId)
+                .execute()
+                .value
+            
+            return existing.first?.id
+        }
+        
+        private func createRestaurantInDatabase(_ restaurant: Restaurant) async throws -> String {
+            struct RestaurantInsert: Codable {
+                let id: String
+                let google_place_id: String?
+                let name: String
+                let address: String?
+                let city: String?
+                let state: String?
+                let postal_code: String?
+                let country: String?
+                let phone: String?
+                let location: String? // PostGIS POINT format
+                let rating: Double?
+                let price_range: Int?
+                let categories: [GooglePlaceCategory]
+                let hours: GoogleOpeningHours?
+                let google_maps_url: String?
+                let image_url: String?
+                let created_at: String
+                let updated_at: String
+            }
+            
+            let restaurantInsert = RestaurantInsert(
+                id: restaurant.id.uuidString,
+                google_place_id: restaurant.googlePlaceId,
+                name: restaurant.name,
+                address: restaurant.address,
+                city: restaurant.city,
+                state: restaurant.state,
+                postal_code: restaurant.postalCode,
+                country: restaurant.country,
+                phone: restaurant.phone,
+                location: restaurant.location.map { "POINT(\($0.longitude) \($0.latitude))" },
+                rating: restaurant.rating,
+                price_range: restaurant.priceRange,
+                categories: restaurant.categories,
+                hours: restaurant.hours,
+                google_maps_url: restaurant.googleMapsUrl,
+                image_url: restaurant.imageUrl,
+                created_at: ISO8601DateFormatter().string(from: restaurant.createdAt),
+                updated_at: ISO8601DateFormatter().string(from: restaurant.updatedAt)
+            )
+            
+            struct RestaurantResponse: Codable {
+                let id: String
+            }
+            
+            let response: RestaurantResponse = try await supabase
+                .from("restaurants")
+                .insert(restaurantInsert)
+                .select("id")
+                .single()
+                .execute()
+                .value
+            
+            print("✅ Created restaurant: \(response.id)")
+            return response.id
+        }
+        
+        private func createMealInDatabase(meal: Meal, restaurantId: String?) async throws {
+            print("Creating meal: \(meal.id)")
+            
             let mealInsert = MealInsert(
                 id: meal.id.uuidString,
                 user_id: meal.userId.uuidString,
-                restaurant_id: meal.restaurant?.id.uuidString,
+                restaurant_id: restaurantId,
                 meal_type: meal.mealType.rawValue,
                 title: meal.title,
                 description: meal.description,
@@ -280,58 +387,69 @@ class DraftMealService: ObservableObject {
                 last_activity_at: ISO8601DateFormatter().string(from: Date())
             )
             
-            // Insert meal
             try await supabase
                 .from("meals")
                 .insert(mealInsert)
                 .execute()
             
-            // Now upload all the local photos
-            for localPhoto in draftMeal.photos {
-                // Load the local image data
-                guard let imageData = loadLocalImage(fileName: localPhoto.storagePath) else {
-                    continue
-                }
-                
-                // Upload to Supabase storage
-                let fileName = "\(meal.id.uuidString)/\(UUID().uuidString).jpg"
-                let filePath = "meal-photos/\(fileName)"
-                
-                try await supabase.storage
-                    .from("meal-photos")
-                    .upload(filePath, data: imageData, options: FileOptions(contentType: "image/jpeg"))
-                
-                // Get public URL
-                let publicURL = try supabase.storage
-                    .from("meal-photos")
-                    .getPublicURL(path: filePath)
-                
-                // Create photo record in database
-                let photoInsert = PhotoInsert(
-                    id: localPhoto.id.uuidString,
-                    meal_id: meal.id.uuidString,
-                    collaborative_meal_id: nil,
-                    user_id: meal.userId.uuidString,
-                    storage_path: filePath,
-                    url: publicURL.absoluteString,
-                    alt_text: nil,
-                    is_primary: false,
-                    course: localPhoto.course?.rawValue,
-                    created_at: ISO8601DateFormatter().string(from: localPhoto.createdAt)
-                )
-                
-                try await supabase
-                    .from("photos")
-                    .insert(photoInsert)
-                    .execute()
-                
-                // Delete the local file
-                deleteLocalImage(fileName: localPhoto.storagePath)
+            print("✅ Created meal: \(meal.id)")
+        }
+        
+        private func uploadMealPhotos(mealId: UUID, photos: [Photo]) async throws {
+            for localPhoto in photos {
+                try await uploadSinglePhoto(mealId: mealId, photo: localPhoto)
+            }
+        }
+        
+        private func uploadSinglePhoto(mealId: UUID, photo: Photo) async throws {
+            // Load the local image data
+            guard let imageData = loadLocalImage(fileName: photo.storagePath) else {
+                print("⚠️ Could not load local image: \(photo.storagePath)")
+                return
             }
             
-            // Remove from drafts
-            draftMeals.removeAll { $0.meal.id == meal.id }
+            // Upload to Supabase storage
+            let fileName = "\(mealId.uuidString)/\(UUID().uuidString).jpg"
+            let filePath = "meal-photos/\(fileName)"
+            
+            try await supabase.storage
+                .from("meal-photos")
+                .upload(filePath, data: imageData, options: FileOptions(contentType: "image/jpeg"))
+            
+            // Get public URL
+            let publicURL = try supabase.storage
+                .from("meal-photos")
+                .getPublicURL(path: filePath)
+            
+            // Create photo record in database
+            let photoInsert = PhotoInsert(
+                id: photo.id.uuidString,
+                meal_id: mealId.uuidString,
+                collaborative_meal_id: nil,
+                user_id: photo.userId.uuidString,
+                storage_path: filePath,
+                url: publicURL.absoluteString,
+                alt_text: nil,
+                is_primary: false,
+                course: photo.course?.rawValue,
+                created_at: ISO8601DateFormatter().string(from: photo.createdAt)
+            )
+            
+            try await supabase
+                .from("photos")
+                .insert(photoInsert)
+                .execute()
+            
+            // Delete the local file
+            deleteLocalImage(fileName: photo.storagePath)
+            
+            print("✅ Uploaded photo: \(photo.id)")
+        }
+        
+        private func removeDraftMeal(mealId: UUID) {
+            draftMeals.removeAll { $0.meal.id == mealId }
             saveDraftMealsToLocal(draftMeals)
+            print("✅ Removed draft meal: \(mealId)")
         }
 }
 

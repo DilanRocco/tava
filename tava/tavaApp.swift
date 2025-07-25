@@ -10,14 +10,21 @@ import SwiftUI
 @main
 struct tavaApp: App {
     @StateObject private var supabase = SupabaseClient.shared
+    @StateObject private var draftMealService = DraftMealService()
+    @StateObject private var mealService = MealService()
+    @StateObject private var googlePlacesService = GooglePlacesService()
+    @StateObject private var locationService = LocationService()
 
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(supabase)
-                .environmentObject(LocationService())
-                .environmentObject(MealService())
+                .environmentObject(mealService)
+                .environmentObject(draftMealService)
+                .environmentObject(googlePlacesService)
+                .environmentObject(locationService)
+
         }
     }
 }

@@ -90,21 +90,47 @@ class GooglePlacesService: ObservableObject {
             throw GooglePlacesError.invalidURL
         }
         
+        print("🔍 Fetching place details for placeId: \(placeId)")
+        print("🔍 URL: \(url)")
+        
         let (data, response) = try await URLSession.shared.data(from: url)
         
         guard let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode == 200 else {
+            print("❌ HTTP Error: \(response)")
             throw GooglePlacesError.apiError
         }
         
-        let detailsResponse = try JSONDecoder().decode(GooglePlaceDetailsResponse.self, from: data)
-        
-        guard detailsResponse.status == "OK" else {
-            throw GooglePlacesError.apiError
+        // Print raw response for debugging
+        if let responseString = String(data: data, encoding: .utf8) {
+            print("🔍 Raw API Response: \(responseString)")
         }
         
-        return detailsResponse.result
+        // First try to decode as error response to check status
+        do {
+            let errorResponse = try JSONDecoder().decode(GooglePlaceErrorResponse.self, from: data)
+            print("❌ Google Places API Error: \(errorResponse.status) - \(errorResponse.errorMessage ?? "Unknown error")")
+            throw GooglePlacesError.apiError
+        } catch {
+            // If it's not an error response, try to decode as success response
+            do {
+                let detailsResponse = try JSONDecoder().decode(GooglePlaceDetailsResponse.self, from: data)
+                
+                guard detailsResponse.status == "OK" else {
+                    print("❌ Google Places API returned status: \(detailsResponse.status)")
+                    throw GooglePlacesError.apiError
+                }
+                
+                print("✅ Successfully fetched place details for: \(detailsResponse.result.name)")
+                return detailsResponse.result
+            } catch {
+                print("❌ Failed to decode response: \(error)")
+                throw GooglePlacesError.decodingError
+            }
+        }
     }
+    
+
     
     // MARK: - Private Methods
     
@@ -207,6 +233,8 @@ class GooglePlacesService: ObservableObject {
     
     // MARK: - Convert to App Models
     
+    /// Converts a Google Place to a Restaurant object for use in drafts
+    /// Note: This doesn't save to database - restaurants are created when meals are published
     func convertToRestaurant(_ googlePlace: GooglePlace) -> Restaurant {
         let location = LocationPoint(
             latitude: googlePlace.geometry.location.lat,
@@ -293,6 +321,16 @@ struct GooglePlaceSearchResponse: Codable {
 struct GooglePlaceDetailsResponse: Codable {
     let result: GooglePlaceDetails
     let status: String
+}
+
+struct GooglePlaceErrorResponse: Codable {
+    let status: String
+    let errorMessage: String?
+    
+    enum CodingKeys: String, CodingKey {
+        case status
+        case errorMessage = "error_message"
+    }
 }
 
 struct GooglePlace: Codable, Identifiable {

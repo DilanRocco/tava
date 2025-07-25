@@ -3,7 +3,7 @@ import SwiftUI
 import SwiftUI
 
 struct MainTabView: View {
-    @StateObject var draftMealService: DraftMealService = DraftMealService()
+    @EnvironmentObject var draftMealService: DraftMealService
     @State private var selectedTab = 0
     @State private var showCameraFlow = false
     @State private var cameraFlowState: CameraFlowState = .camera
