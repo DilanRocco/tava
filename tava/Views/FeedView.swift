@@ -1,9 +1,5 @@
 import SwiftUI
 
-struct IdentifiableString: Identifiable {
-    let id: String
-}
-
 struct FeedView: View {
     @EnvironmentObject var supabase: SupabaseClient
     @EnvironmentObject var locationService: LocationService
@@ -421,44 +417,6 @@ struct FeedItemView: View {
         }
     }
 }
-
-// MARK: - Supporting Views and Models
-
-struct FeedMealItem: Identifiable {
-    let id: String
-    let userId: String
-    let username: String
-    let displayName: String?
-    let avatarUrl: String?
-    let mealTitle: String?
-    let description: String?
-    let mealType: String // 'restaurant' or 'homemade'
-    let location: String
-    let tags: [String]
-    let rating: Int?
-    let eatenAt: Date
-    let likesCount: Int
-    let commentsCount: Int
-    let bookmarksCount: Int
-    let photoUrl: String?
-    let userHasLiked: Bool
-    let userHasBookmarked: Bool
-    
-    var timeAgo: String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: eatenAt, relativeTo: Date())
-    }
-    
-    var shareText: String {
-        
-        let title = mealTitle ?? "Meal"
-        return "\(title) at \(location) - Check out this amazing meal on Tava!"
-    }
-}
-
-
-
 
 
 

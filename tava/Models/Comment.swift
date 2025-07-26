@@ -5,7 +5,8 @@
 //  Created by dilan on 7/19/25.
 //
 import Foundation
-struct Comment: Identifiable {
+
+struct Comment: Identifiable, Codable {
     let id: UUID
     let mealId: UUID
     let parentCommentId: UUID?
@@ -20,6 +21,23 @@ struct Comment: Identifiable {
     let repliesCount: Int
     let userHasLiked: Bool
     var replies: [Comment]
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case mealId = "meal_id"
+        case parentCommentId = "parent_comment_id"
+        case userId = "user_id"
+        case username
+        case displayName = "display_name"
+        case avatarUrl = "avatar_url"
+        case content
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+        case likesCount = "likes_count"
+        case repliesCount = "replies_count"
+        case userHasLiked = "user_has_liked"
+        case replies
+    }
     
     var isParentComment: Bool {
         return parentCommentId == nil

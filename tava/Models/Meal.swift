@@ -1,23 +1,6 @@
 import Foundation
 import CoreLocation
 
-enum MealType: String, Codable, CaseIterable {
-    case restaurant
-    case homemade
-}
-
-enum MealPrivacy: String, Codable, CaseIterable {
-    case `public`
-    case friendsOnly = "friends_only"
-    case `private`
-}
-
-enum CollaborationStatus: String, Codable, CaseIterable {
-    case active
-    case completed
-    case cancelled
-}
-
 struct Meal: Codable, Identifiable, Hashable {
     let id: UUID
     let userId: UUID
@@ -85,88 +68,8 @@ struct MealWithDetails: Codable, Identifiable {
     }
 }
 
-// MARK: - Feed Data Models
-
-struct FeedMealData: Codable, Identifiable {
-    let mealId: UUID
-    let userId: UUID
-    let username: String
-    let displayName: String?
-    let avatarUrl: String?
-    let mealTitle: String?
-    let mealDescription: String?
-    let mealType: MealType
-    let locationText: String
-    let tags: [String]
-    let rating: Int?
-    let eatenAt: Date
-    let likesCount: Int
-    let commentsCount: Int
-    let bookmarksCount: Int
-    var photoUrl: String?
-    let userHasLiked: Bool
-    let userHasBookmarked: Bool
-    var id: UUID { mealId }
-    
-    enum CodingKeys: String, CodingKey {
-        case mealId = "meal_id"
-        case userId = "user_id"
-        case username
-        case displayName = "display_name"
-        case avatarUrl = "avatar_url"
-        case mealTitle = "meal_title"
-        case mealDescription = "meal_description"
-        case mealType = "meal_type"
-        case locationText = "location_text"
-        case tags
-        case rating
-        case eatenAt = "eaten_at"
-        case likesCount = "likes_count"
-        case commentsCount = "comments_count"
-        case bookmarksCount = "bookmarks_count"
-        case photoUrl = "photo_url"
-        case userHasLiked = "user_has_liked"
-        case userHasBookmarked = "user_has_bookmarked"
-    }
-    
-    // Convert to FeedMealItem for UI
-    func toFeedMealItem() -> FeedMealItem {
-        return FeedMealItem(
-            id: mealId.uuidString,
-            userId: userId.uuidString,
-            username: username,
-            displayName: displayName,
-            avatarUrl: avatarUrl,
-            mealTitle: mealTitle,
-            description: mealDescription,
-            mealType: mealType.rawValue,
-            location: locationText,
-            tags: tags,
-            rating: rating,
-            eatenAt: eatenAt,
-            likesCount: likesCount,
-            commentsCount: commentsCount,
-            bookmarksCount: bookmarksCount,
-            photoUrl: photoUrl,
-            userHasLiked: userHasLiked,
-            userHasBookmarked: userHasBookmarked
-        )
-    }
-} 
-
-enum MealStatus: String, CaseIterable, Codable {
-    case draft
-    case published  
-    case archived
-    
-    var displayName: String {
-        switch self {
-        case .draft: return "Draft"
-        case .published: return "Published"
-        case .archived: return "Archived"
-        }
-    }
-}
+// Note: FeedMealData and FeedMealItem are now in Models/FeedItem.swift
+// Note: MealType, MealPrivacy, MealStatus are now in Models/MealTypes.swift
 
 
 

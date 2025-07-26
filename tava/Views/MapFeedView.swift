@@ -3,20 +3,10 @@ import MapboxMaps
 import CoreLocation
 import Combine
 
-// MARK: - Data Structures for Clustering
-struct MapCluster: Identifiable {
-    let id = UUID()
-    let coordinate: CLLocationCoordinate2D
-    let meals: [MealWithDetails]
-    let restaurant: Restaurant?
-    
-    var count: Int { meals.count }
-    var isCluster: Bool { meals.count > 1 }
-}
+// Map models are now in Models/MapModels.swift
 
-struct RestaurantWithDetails {
-    let restaurant: Restaurant
-    let meals: [MealWithDetails]
+struct IdentifiableString: Identifiable {
+    let id: String
 }
 
 struct MapFeedView: View {
@@ -32,16 +22,15 @@ struct MapFeedView: View {
     @State private var showProfile = false
     @State private var showMealDetail = false
     @State private var showRestaurantDetail = false
+    @State private var showRestaurantGrid = false
+    @State private var restaurantMealsForFeed: [MealWithDetails] = []
+    @State private var showRestaurantFeed = false
     @State private var friendsFilter: FriendsFilterOption = .all
     @State private var mapClusters: [MapCluster] = []
     @State private var currentZoomLevel: Double = 15.0
     @State private var mapView: MapView?
     
-    enum FriendsFilterOption: String, CaseIterable {
-        case all = "All"
-        case friends = "Friends"
-        case nonFriends = "Discover"
-    }
+    // FriendsFilterOption is now in Models/MapModels.swift
     
     var restaurantMeals: [MealWithDetails] {
         let allMeals = mealService.nearbyMeals.filter { $0.restaurant != nil }
@@ -69,8 +58,15 @@ struct MapFeedView: View {
                     currentZoom: $currentZoomLevel,
                     mapView: $mapView,
                     onMealTap: { meal in
-                        selectedMeal = meal
-                        showMealDetail = true
+                        // Navigate to restaurant grid instead of meal detail
+                        guard let restaurant = meal.restaurant else { return }
+                        
+                        let restaurantMeals = restaurantMeals.filter { $0.restaurant?.id == restaurant.id }
+                        selectedRestaurant = RestaurantWithDetails(
+                            restaurant: restaurant,
+                            meals: restaurantMeals
+                        )
+                        showRestaurantGrid = true
                     },
                     onClusterTap: { cluster in
                         // Handle cluster tap - could zoom to cluster bounds
@@ -93,18 +89,29 @@ struct MapFeedView: View {
             .sheet(isPresented: $showFeed) {
                 MapFeedListView(meals: restaurantMeals)
             }
-            .sheet(isPresented: $showMealDetail) {
-                if let selectedMeal = selectedMeal {
-                    MealDetailModal(
-                        meal: selectedMeal,
-                        onRestaurantTap: {
-                            showMealDetail = false
-                            selectedRestaurant = RestaurantWithDetails(
-                                restaurant: selectedMeal.restaurant!,
-                                meals: restaurantMeals.filter { $0.restaurant?.id == selectedMeal.restaurant?.id }
-                            )
+            .sheet(isPresented: $showRestaurantGrid) {
+                if let selectedRestaurant = selectedRestaurant {
+                    RestaurantMealsGridView(
+                        restaurant: selectedRestaurant.restaurant,
+                        meals: selectedRestaurant.meals,
+                        onRestaurantDetailsTap: {
+                            showRestaurantGrid = false
                             showRestaurantDetail = true
+                        },
+                        onMealTap: { meal in
+                            showRestaurantGrid = false
+                            restaurantMealsForFeed = selectedRestaurant.meals
+                            selectedMeal = meal
+                            showRestaurantFeed = true
                         }
+                    )
+                }
+            }
+            .sheet(isPresented: $showRestaurantFeed) {
+                if let selectedMeal = selectedMeal {
+                    RestaurantFeedView(
+                        meals: restaurantMealsForFeed,
+                        startingMeal: selectedMeal
                     )
                 }
             }
@@ -264,7 +271,7 @@ struct ModernMapOverlay: View {
     @Binding var showFeed: Bool
     @Binding var showProfile: Bool
     @Binding var showFilters: Bool
-    @Binding var friendsFilter: MapFeedView.FriendsFilterOption
+    @Binding var friendsFilter: FriendsFilterOption
     let onRecenter: () -> Void
     
     var body: some View {
@@ -347,7 +354,7 @@ struct ModernMapOverlay: View {
             }
             
             HStack(spacing: 12) {
-                ForEach(MapFeedView.FriendsFilterOption.allCases, id: \.self) { option in
+                ForEach(FriendsFilterOption.allCases, id: \.self) { option in
                     FilterOptionButton(
                         title: option.rawValue,
                         isSelected: friendsFilter == option,
@@ -402,19 +409,7 @@ struct FilterOptionButton: View {
     }
 }
 
-// MARK: - Extensions
-extension MapFeedView.FriendsFilterOption {
-    var iconName: String {
-        switch self {
-        case .all:
-            return "globe"
-        case .friends:
-            return "person.2.fill"
-        case .nonFriends:
-            return "eye.fill"
-        }
-    }
-}
+// FriendsFilterOption extension is now in Models/MapModels.swift
 
 // MARK: - Map Feed List View
 struct MapFeedListView: View {
@@ -892,10 +887,460 @@ struct MealDetailModal: View {
     }
 }
 
+// MARK: - Restaurant Meals Grid View
+struct RestaurantMealsGridView: View {
+    let restaurant: Restaurant
+    let meals: [MealWithDetails]
+    let onRestaurantDetailsTap: () -> Void
+    let onMealTap: (MealWithDetails) -> Void
+    @Environment(\.dismiss) private var dismiss
+    
+    private let columns = [
+        GridItem(.flexible(), spacing: 8),
+        GridItem(.flexible(), spacing: 8)
+    ]
+    
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Restaurant Header with Details Button
+                    restaurantHeaderSection
+                    
+                    // Meals Grid
+                    LazyVGrid(columns: columns, spacing: 8) {
+                        ForEach(meals, id: \.id) { meal in
+                            MealGridItemView(meal: meal) {
+                                onMealTap(meal)
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+            }
+            .navigationTitle(restaurant.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Close") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+    
+    private var restaurantHeaderSection: some View {
+        VStack(spacing: 16) {
+            // Restaurant basic info
+            HStack {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(restaurant.name)
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    
+                    if let address = restaurant.address {
+                        Text(address)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    HStack(spacing: 12) {
+                        if let rating = restaurant.rating {
+                            HStack(spacing: 4) {
+                                Image(systemName: "star.fill")
+                                    .foregroundColor(.orange)
+                                    .font(.system(size: 12))
+                                Text(String(format: "%.1f", rating))
+                                    .fontWeight(.medium)
+                            }
+                        }
+                        
+                        if let priceRange = restaurant.priceRange {
+                            Text(String(repeating: "$", count: priceRange))
+                                .foregroundColor(.green)
+                                .fontWeight(.medium)
+                        }
+                    }
+                }
+                
+                Spacer()
+                
+                // Restaurant image placeholder
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.gray.opacity(0.2))
+                    .frame(width: 80, height: 80)
+                    .overlay(
+                        Image(systemName: "fork.knife")
+                            .font(.title2)
+                            .foregroundColor(.gray)
+                    )
+            }
+            .padding(.horizontal)
+            
+            // View Restaurant Details Button
+            Button(action: onRestaurantDetailsTap) {
+                HStack {
+                    Image(systemName: "info.circle")
+                    Text("View Restaurant Details")
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                }
+                .foregroundColor(.orange)
+                .padding()
+                .background(Color.orange.opacity(0.1))
+                .cornerRadius(12)
+            }
+            .padding(.horizontal)
+            
+            // Meals count
+            HStack {
+                Text("\(meals.count) meals from this restaurant")
+                    .font(.headline)
+                    .fontWeight(.medium)
+                Spacer()
+            }
+            .padding(.horizontal)
+        }
+    }
+}
+
+// MARK: - Meal Grid Item View
+struct MealGridItemView: View {
+    let meal: MealWithDetails
+    let onTap: () -> Void
+    
+    var body: some View {
+        Button(action: onTap) {
+            VStack(spacing: 8) {
+                // Meal image or placeholder
+                ZStack {
+                    if let photo = meal.primaryPhoto {
+                        AsyncImage(url: URL(string: photo.url)) { image in
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(height: 140)
+                                .clipped()
+                        } placeholder: {
+                            Rectangle()
+                                .fill(Color.gray.opacity(0.3))
+                                .frame(height: 140)
+                                .overlay(
+                                    ProgressView()
+                                        .tint(.orange)
+                                )
+                        }
+                    } else {
+                        Rectangle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color.orange.opacity(0.3),
+                                        Color.orange.opacity(0.6)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(height: 140)
+                            .overlay(
+                                Image(systemName: "photo.fill")
+                                    .font(.title2)
+                                    .foregroundColor(.white.opacity(0.7))
+                            )
+                    }
+                    
+                    // User avatar overlay
+                    VStack {
+                        HStack {
+                            Spacer()
+                            Circle()
+                                .fill(Color.orange)
+                                .frame(width: 28, height: 28)
+                                .overlay(
+                                    Text((meal.user.displayName ?? meal.user.username).prefix(1))
+                                        .font(.caption)
+                                        .fontWeight(.bold)
+                                        .foregroundColor(.white)
+                                )
+                                .background(
+                                    Circle()
+                                        .fill(.ultraThinMaterial)
+                                        .shadow(radius: 2)
+                                )
+                        }
+                        Spacer()
+                    }
+                    .padding(8)
+                }
+                .cornerRadius(12)
+                
+                // Meal info
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(meal.meal.displayTitle)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                    
+                    HStack {
+                        if let rating = meal.meal.rating {
+                            HStack(spacing: 2) {
+                                ForEach(0..<rating, id: \.self) { _ in
+                                    Image(systemName: "star.fill")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(.orange)
+                                }
+                            }
+                        }
+                        
+                        Spacer()
+                        
+                        Text(meal.user.displayName ?? meal.user.username)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+// MARK: - Restaurant Feed View
+struct RestaurantFeedView: View {
+    let meals: [MealWithDetails]
+    let startingMeal: MealWithDetails
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var mealService: MealService
+    @EnvironmentObject var supabase: SupabaseClient
+    
+    @State private var currentIndex = 0
+    @State private var selectedMealId: IdentifiableString? = nil
+    
+    // Convert MealWithDetails to FeedMealItem format for consistency with existing FeedView
+    private var feedItems: [FeedMealItem] {
+        return meals.compactMap { mealWithDetails in
+            // Convert MealWithDetails to FeedMealItem
+            FeedMealItem(
+                id: mealWithDetails.meal.id.uuidString,
+                userId: mealWithDetails.user.id.uuidString,
+                username: mealWithDetails.user.username,
+                displayName: mealWithDetails.user.displayName,
+                avatarUrl: nil, // No avatar URL in MealWithDetails
+                mealTitle: mealWithDetails.meal.displayTitle,
+                description: mealWithDetails.meal.description,
+                mealType: mealWithDetails.meal.mealType.rawValue,
+                location: mealWithDetails.restaurant?.name ?? "Unknown Location",
+                tags: mealWithDetails.meal.tags,
+                rating: mealWithDetails.meal.rating,
+                eatenAt: mealWithDetails.meal.eatenAt,
+                likesCount: mealWithDetails.reactions.filter { $0.reactionType == .like }.count,
+                commentsCount: 0, // You'll need to get this from comments
+                bookmarksCount: 0, // You'll need to get this from bookmarks
+                photoUrl: mealWithDetails.primaryPhoto?.url,
+                userHasLiked: false, // You'll need to populate this from reactions
+                userHasBookmarked: false // You'll need to populate this
+            )
+        }
+    }
+    
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                Color.black.ignoresSafeArea()
+                
+                if feedItems.isEmpty {
+                    emptyStateView
+                } else {
+                    mainContentView(geometry: geometry)
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+        .sheet(item: $selectedMealId) { wrapped in
+            CommentsView(mealId: wrapped.id)
+        }
+    }
+    
+    private var emptyStateView: some View {
+        VStack {
+            Image(systemName: "fork.knife")
+                .font(.system(size: 60))
+                .foregroundColor(.orange)
+            Text("No meals available")
+                .font(.title2)
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+                .padding(.top)
+        }
+    }
+    
+    private func mainContentView(geometry: GeometryProxy) -> some View {
+        VStack {
+            headerView
+            feedScrollView(geometry: geometry)
+        }
+    }
+    
+    private var headerView: some View {
+        HStack {
+            Button("Close") {
+                dismiss()
+            }
+            .foregroundColor(.white)
+            .font(.headline)
+            
+            Spacer()
+            
+            if let restaurant = meals.first?.restaurant {
+                Text(restaurant.name)
+                    .font(.headline)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+            }
+            
+            Spacer()
+            
+            // Placeholder for balance
+            Text("Close")
+                .foregroundColor(.clear)
+                .font(.headline)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 50)
+    }
+    
+    private func feedScrollView(geometry: GeometryProxy) -> some View {
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(feedItems.enumerated()), id: \.element.id) { index, meal in
+                        feedItemView(meal: meal, geometry: geometry)
+                            .frame(width: geometry.size.width, height: geometry.size.height - 100)
+                            .id(index)
+                    }
+                }
+            }
+            .scrollTargetBehavior(.paging)
+            .onAppear {
+                if let startIndex = feedItems.firstIndex(where: { $0.id == startingMeal.meal.id.uuidString }) {
+                    proxy.scrollTo(startIndex)
+                }
+            }
+        } 
+    }
+    
+    private func feedItemView(meal: FeedMealItem, geometry: GeometryProxy) -> some View {
+        FeedItemView(
+            meal: meal,
+            geometry: geometry,
+            onProfileTap: {
+                // Could navigate to user profile
+            },
+            onCommentTap: {
+                handleComment(for: meal)
+            },
+            onLikeTap: { isLiked in
+                Task {
+                    try await handleLike(for: meal, isLiked: isLiked)
+                }
+            },
+            onBookmarkTap: {
+                Task {
+                    try await mealService.addBookmark(mealId: meal.id)
+                }
+            }
+        )
+    }
+    
+    
+    private func handleComment(for meal: FeedMealItem) {
+        selectedMealId = IdentifiableString(id: meal.id)
+    }
+    
+    private func handleLike(for meal: FeedMealItem, isLiked: Bool) async throws {
+        try await mealService.toggleReaction(mealId: meal.id, reactionType: .like, isLiked: isLiked)
+    }
+    
+    private func formatTimeAgo(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: Date())
+    }
+}
+
+
 // MARK: - Restaurant Detail View
 struct RestaurantDetailView: View {
     let restaurantWithDetails: RestaurantWithDetails
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var mealService: MealService
+    @EnvironmentObject var supabase: SupabaseClient
+    
+    @State private var allRestaurantMeals: [MealWithDetails] = []
+    @State private var isLoadingMore = false
+    @State private var selectedTimeFilter: TimeFilter = .all
+    
+    enum TimeFilter: String, CaseIterable {
+        case all = "All Time"
+        case thisWeek = "This Week"
+        case thisMonth = "This Month"
+        case older = "Older"
+        
+        var dateRange: (start: Date?, end: Date?) {
+            let now = Date()
+            let calendar = Calendar.current
+            
+            switch self {
+            case .all:
+                return (nil, nil)
+            case .thisWeek:
+                let weekAgo = calendar.date(byAdding: .weekOfYear, value: -1, to: now)
+                return (weekAgo, now)
+            case .thisMonth:
+                let monthAgo = calendar.date(byAdding: .month, value: -1, to: now)
+                return (monthAgo, now)
+            case .older:
+                let monthAgo = calendar.date(byAdding: .month, value: -1, to: now)
+                return (nil, monthAgo)
+            }
+        }
+    }
+    
+    var filteredMeals: [MealWithDetails] {
+        let allMeals = allRestaurantMeals.isEmpty ? restaurantWithDetails.meals : allRestaurantMeals
+        
+        guard selectedTimeFilter != .all else { return allMeals }
+        
+        let (start, end) = selectedTimeFilter.dateRange
+        
+        return allMeals.filter { meal in
+            let mealDate = meal.meal.createdAt
+            
+            if let start = start, let end = end {
+                return mealDate >= start && mealDate <= end
+            } else if let end = end {
+                return mealDate < end
+            } else if let start = start {
+                return mealDate >= start
+            }
+            return true
+        }
+    }
+    
+    var groupedMeals: [(date: Date, meals: [MealWithDetails])] {
+        let calendar = Calendar.current
+        let grouped = Dictionary(grouping: filteredMeals) { meal in
+            calendar.startOfDay(for: meal.meal.createdAt)
+        }
+        
+        return grouped
+            .map { (date: $0.key, meals: $0.value) }
+            .sorted { $0.date > $1.date }
+    }
     
     var body: some View {
         NavigationView {
@@ -904,10 +1349,26 @@ struct RestaurantDetailView: View {
                     // Restaurant Header
                     restaurantHeader
                     
+                    // Stats Summary
+                    statsSection
+                    
                     Divider()
                     
-                    // Meals at this restaurant
-                    mealsSection
+                    // Time Filter
+                    timeFilterSection
+                    
+                    // Meals grouped by date
+                    if groupedMeals.isEmpty {
+                        emptyStateView
+                    } else {
+                        mealsSection
+                    }
+                    
+                    if isLoadingMore {
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                    }
                 }
                 .padding()
             }
@@ -920,26 +1381,46 @@ struct RestaurantDetailView: View {
                     }
                 }
             }
+            .task {
+                await loadAllRestaurantMeals()
+            }
         }
     }
     
     private var restaurantHeader: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(restaurantWithDetails.restaurant.name)
-                .font(.title)
-                .fontWeight(.bold)
-            
-            if let address = restaurantWithDetails.restaurant.address {
-                Text(address)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(restaurantWithDetails.restaurant.name)
+                        .font(.title)
+                        .fontWeight(.bold)
+                    
+                    if let address = restaurantWithDetails.restaurant.address {
+                        Text(address)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                Spacer()
+                
+                // Restaurant image placeholder
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.gray.opacity(0.2))
+                    .frame(width: 80, height: 80)
+                    .overlay(
+                        Image(systemName: "fork.knife")
+                            .font(.title2)
+                            .foregroundColor(.gray)
+                    )
             }
             
-            HStack {
+            HStack(spacing: 16) {
                 if let rating = restaurantWithDetails.restaurant.rating {
-                    HStack {
+                    HStack(spacing: 4) {
                         Image(systemName: "star.fill")
                             .foregroundColor(.orange)
+                            .font(.system(size: 14))
                         Text(String(format: "%.1f", rating))
                             .fontWeight(.medium)
                     }
@@ -950,55 +1431,289 @@ struct RestaurantDetailView: View {
                         .foregroundColor(.green)
                         .fontWeight(.medium)
                 }
+                
+                if let cuisine = restaurantWithDetails.restaurant.categories.first?.title {
+                    Text(cuisine)
+                        .font(.caption)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 4)
+                        .background(Color.blue.opacity(0.1))
+                        .foregroundColor(.blue)
+                        .cornerRadius(12)
+                }
+            }
+        }
+    }
+    
+    private var statsSection: some View {
+        HStack(spacing: 20) {
+            StatCard(
+                title: "Total Visits",
+                value: "\(allRestaurantMeals.isEmpty ? restaurantWithDetails.meals.count : allRestaurantMeals.count)",
+                icon: "fork.knife.circle.fill",
+                color: .orange
+            )
+            
+            StatCard(
+                title: "Unique Dishes",
+                value: "\(uniqueDishesCount)",
+                icon: "list.bullet.rectangle",
+                color: .blue
+            )
+            
+            StatCard(
+                title: "Avg Rating",
+                value: String(format: "%.1f", averageRating),
+                icon: "star.fill",
+                color: .yellow
+            )
+        }
+    }
+    
+    private var timeFilterSection: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
+                ForEach(TimeFilter.allCases, id: \.self) { filter in
+                    Button(action: {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            selectedTimeFilter = filter
+                        }
+                    }) {
+                        Text(filter.rawValue)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(selectedTimeFilter == filter ? .white : .primary)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(
+                                selectedTimeFilter == filter ? Color.orange : Color.gray.opacity(0.1)
+                            )
+                            .cornerRadius(20)
+                    }
+                }
             }
         }
     }
     
     private var mealsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Meals (\(restaurantWithDetails.meals.count))")
-                .font(.headline)
-                .fontWeight(.bold)
-            
-            ForEach(restaurantWithDetails.meals, id: \.id) { meal in
-                mealCard(for: meal)
-            }
-        }
-    }
-    
-    private func mealCard(for meal: MealWithDetails) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(meal.meal.displayTitle)
-                .font(.subheadline)
-                .fontWeight(.medium)
-            
-            if let description = meal.meal.description {
-                Text(description)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .lineLimit(2)
-            }
-            
-            HStack {
-                Text("By \(meal.user.displayName ?? meal.user.username)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                Spacer()
-                
-                if let rating = meal.meal.rating {
-                    HStack(spacing: 2) {
-                        ForEach(1...5, id: \.self) { star in
-                            Image(systemName: star <= rating ? "star.fill" : "star")
-                                .foregroundColor(.orange)
-                                .font(.system(size: 10))
-                        }
+        VStack(alignment: .leading, spacing: 20) {
+            ForEach(groupedMeals, id: \.date) { group in
+                VStack(alignment: .leading, spacing: 12) {
+                    // Date header
+                    Text(formatDateHeader(group.date))
+                        .font(.headline)
+                        .fontWeight(.bold)
+                        .foregroundColor(.secondary)
+                    
+                    // Meals for this date
+                    ForEach(group.meals, id: \.id) { meal in
+                        MealCard(meal: meal)
                     }
                 }
             }
         }
-        .padding()
-        .background(Color.gray.opacity(0.1))
-        .cornerRadius(8)
+    }
+    
+    private var emptyStateView: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "tray")
+                .font(.system(size: 48))
+                .foregroundColor(.gray)
+            
+            Text("No meals found")
+                .font(.headline)
+                .foregroundColor(.secondary)
+            
+            Text("Try adjusting your time filter")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 40)
+    }
+    
+    // MARK: - Helper Properties
+    private var uniqueDishesCount: Int {
+        let allMeals = allRestaurantMeals.isEmpty ? restaurantWithDetails.meals : allRestaurantMeals
+        let uniqueTitles = Set(allMeals.map { $0.meal.displayTitle.lowercased() })
+        return uniqueTitles.count
+    }
+    
+    private var averageRating: Double {
+        let allMeals = allRestaurantMeals.isEmpty ? restaurantWithDetails.meals : allRestaurantMeals
+        let ratingsSum = allMeals.compactMap { $0.meal.rating }.reduce(0, +)
+        let ratingsCount = allMeals.compactMap { $0.meal.rating }.count
+        return ratingsCount > 0 ? Double(ratingsSum) / Double(ratingsCount) : 0.0
+    }
+    
+    // MARK: - Helper Methods
+    private func formatDateHeader(_ date: Date) -> String {
+        let calendar = Calendar.current
+        let now = Date()
+        
+        if calendar.isDateInToday(date) {
+            return "Today"
+        } else if calendar.isDateInYesterday(date) {
+            return "Yesterday"
+        } else if let daysAgo = calendar.dateComponents([.day], from: date, to: now).day, daysAgo < 7 {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "EEEE" // Day of week
+            return formatter.string(from: date)
+        } else {
+            let formatter = DateFormatter()
+            formatter.dateStyle = .medium
+            return formatter.string(from: date)
+        }
+    }
+    
+    private func loadAllRestaurantMeals() async {
+        isLoadingMore = true
+        
+        // Fetch all meals for this restaurant from the API
+        // This assumes you have a method in MealService to fetch by restaurant ID
+        let restaurantId = restaurantWithDetails.restaurant.id.uuidString
+        await mealService.fetchMealsForRestaurant(restaurantId: restaurantId)
+        
+        // Update allRestaurantMeals with the fetched data
+        allRestaurantMeals = mealService.getMealsForRestaurant(restaurantId: restaurantId)
+        
+        isLoadingMore = false
     }
 }
+
+// MARK: - Meal Card Component
+struct MealCard: View {
+    let meal: MealWithDetails
+    @State private var isExpanded = false
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top) {
+                // User avatar
+                Circle()
+                    .fill(Color.gray.opacity(0.2))
+                    .frame(width: 40, height: 40)
+                    .overlay(
+                        Text(meal.user.displayName?.prefix(1).uppercased() ?? meal.user.username.prefix(1).uppercased())
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.gray)
+                    )
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(meal.user.displayName ?? meal.user.username)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        
+                        Spacer()
+                        
+                        Text(formatTime(meal.meal.createdAt))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Text(meal.meal.displayTitle)
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                    
+                    if let description = meal.meal.description {
+                        Text(description)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .lineLimit(isExpanded ? nil : 2)
+                            .animation(.easeInOut(duration: 0.2), value: isExpanded)
+                        
+                        if description.count > 100 {
+                            Button(action: {
+                                isExpanded.toggle()
+                            }) {
+                                Text(isExpanded ? "Show less" : "Show more")
+                                    .font(.caption)
+                                    .foregroundColor(.orange)
+                            }
+                        }
+                    }
+                    
+                    HStack(spacing: 16) {
+                        if let rating = meal.meal.rating {
+                            HStack(spacing: 4) {
+                                ForEach(1...5, id: \.self) { star in
+                                    Image(systemName: star <= rating ? "star.fill" : "star")
+                                        .foregroundColor(.orange)
+                                        .font(.system(size: 12))
+                                }
+                            }
+                        }
+                        
+                        if let cost = meal.meal.cost {
+                            Text("$\(String(format: "%.2f", NSDecimalNumber(decimal: cost).doubleValue))")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .foregroundColor(.green)
+                        }
+                        
+                        if !meal.meal.tags.isEmpty {
+                            HStack(spacing: 4) {
+                                ForEach(meal.meal.tags.prefix(3), id: \.self) { tag in
+                                    Text("#\(tag)")
+                                        .font(.caption)
+                                        .foregroundColor(.blue)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Meal image if available
+            if meal.photos.first != nil {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.gray.opacity(0.1))
+                    .frame(height: 200)
+                    .overlay(
+                        Image(systemName: "photo")
+                            .font(.title)
+                            .foregroundColor(.gray)
+                    )
+            }
+        }
+        .padding()
+        .background(Color.gray.opacity(0.05))
+        .cornerRadius(12)
+    }
+    
+    private func formatTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+}
+
+// MARK: - Stat Card Component
+struct StatCard: View {
+    let title: String
+    let value: String
+    let icon: String
+    let color: Color
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.title2)
+                .foregroundColor(color)
+            
+            Text(value)
+                .font(.headline)
+                .fontWeight(.bold)
+            
+            Text(title)
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding()
+        .background(color.opacity(0.1))
+        .cornerRadius(12)
+    }
+}
+
+

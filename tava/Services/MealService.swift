@@ -31,11 +31,7 @@ class MealService: ObservableObject {
                 throw NSError(domain: "AuthError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
             }
             
-            struct FeedParams: Codable {
-                let user_uuid: String
-                let limit_count: Int
-                let offset_count: Int
-            }
+            // FeedParams is now in Models/FeedItem.swift
             
             let params = FeedParams(
                 user_uuid: currentUserId.uuidString,
@@ -168,14 +164,7 @@ class MealService: ObservableObject {
             print("👤 Current user ID: \(currentUserId)")
             
             // Create parameters for the edge function
-            struct NearbyMealsParams: Codable {
-                let center_lat: Double
-                let center_lng: Double
-                let radius_meters: Double
-                let user_uuid: String
-                let limit_count: Int
-                let include_friends_only: Bool
-            }
+            // NearbyMealsParams is now in Models/FeedItem.swift
             
             
             print("🗺️ Fetching nearby meals with radius: \(radius)m from \(location.coordinate)")
@@ -289,45 +278,7 @@ class MealService: ObservableObject {
         return []
     }
     
-    // Add these models and methods to your MealService class
-    
-    // MARK: - Comment Models
-    struct CommentData: Codable, Identifiable {
-        let meal_id: String
-        let comment_id: String
-        let parent_comment_id: String?
-        let user_id: String
-        let username: String
-        let display_name: String?
-        let avatar_url: String?
-        let content: String
-        let created_at: Date
-        let updated_at: Date
-        let likes_count: Int
-        let replies_count: Int
-        let user_has_liked: Bool
-        
-        var id: String { comment_id }
-        
-        func toComment() -> Comment {
-            return Comment(
-                id: UUID(uuidString: comment_id) ?? UUID(),
-                mealId: UUID(uuidString: meal_id) ?? UUID(),
-                parentCommentId: parent_comment_id != nil ? UUID(uuidString: parent_comment_id!) : nil,
-                userId: UUID(uuidString: user_id) ?? UUID(),
-                username: username,
-                displayName: display_name,
-                avatarUrl: avatar_url,
-                content: content,
-                createdAt: created_at,
-                updatedAt: updated_at,
-                likesCount: likes_count,
-                repliesCount: replies_count,
-                userHasLiked: user_has_liked,
-                replies: []
-            )
-        }
-    }
+    // MARK: - Comment Models (now in Models/QueryModels.swift)
     
     
     
@@ -341,11 +292,7 @@ class MealService: ObservableObject {
         defer { isLoadingComments = false }
         
         do {
-            struct CommentParams: Codable {
-                let target_meal_id: String
-                let parent_limit: Int
-                let parent_offset: Int
-            }
+            // CommentParams is now in Models/FeedItem.swift
             
             let params = CommentParams(
                 target_meal_id: mealId,
@@ -361,7 +308,7 @@ class MealService: ObservableObject {
             decoder.dateDecodingStrategy = .formatted(formatter)
             
             print(params)
-            let response: [CommentData] = try await supabase.client.rpc(
+            let response: [CommentQueryData] = try await supabase.client.rpc(
                 "get_meal_comments",
                 params: params
             ).execute().value
@@ -394,11 +341,7 @@ class MealService: ObservableObject {
     
     func fetchReplies(for parentCommentId: String, limit: Int = 5, offset: Int = 0) async -> [Comment] {
         do {
-            struct ReplyParams: Codable {
-                let target_parent_id: String
-                let reply_limit: Int
-                let reply_offset: Int
-            }
+            // ReplyParams is now in Models/FeedItem.swift
             
             let params = ReplyParams(
                 target_parent_id: parentCommentId,
@@ -413,7 +356,7 @@ class MealService: ObservableObject {
             formatter.timeZone = TimeZone(secondsFromGMT: 0)
             decoder.dateDecodingStrategy = .formatted(formatter)
             
-            let response: [CommentData] = try await supabase.client.rpc(
+            let response: [CommentQueryData] = try await supabase.client.rpc(
                 "get_comment_replies", // New function name
                 params: params
             ).execute().value
@@ -434,11 +377,7 @@ class MealService: ObservableObject {
         }
     
         do {
-            struct AddCommentParams: Codable {
-                let target_meal_id: String
-                let comment_content: String
-                let parent_id: String?
-            }
+            // AddCommentParams is now in Models/FeedItem.swift
             
             let params = AddCommentParams(
                 target_meal_id: mealId,
@@ -502,21 +441,13 @@ class MealService: ObservableObject {
             throw NSError(domain: "AuthError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
         }
         
-        struct CommentReaction: Codable {
-            let id: String
-            let user_id: String
-            let comment_id: String
-            let reaction_type: String
-            let created_at: String
-        }
-        
-        let reaction = CommentReaction(
-            id: UUID().uuidString,
-            user_id: currentUserId.uuidString,
-            comment_id: commentId,
-            reaction_type: "like",
-            created_at: ISO8601DateFormatter().string(from: Date())
-        )
+        let reaction = [
+            "id": UUID().uuidString,
+            "user_id": currentUserId.uuidString,
+            "comment_id": commentId,
+            "reaction_type": "like",
+            "created_at": ISO8601DateFormatter().string(from: Date())
+        ]
         
         do {
             try await supabase.client
@@ -610,72 +541,7 @@ func fetchMealsWithRestaurants(
     currentUserId: UUID
 ) async throws -> [MealWithDetails] {
     
-    // First, get meals that have restaurant_id
-    struct MealQueryResult: Codable {
-        let id: String
-        let user_id: String
-        let restaurant_id: String?
-        let meal_type: String
-        let title: String?
-        let description: String?
-        let ingredients: String?
-        let tags: [String]?
-        let privacy: String
-        let rating: Int?
-        let cost: Double?
-        let eaten_at: String
-        let created_at: String
-        let updated_at: String
-        let status: String
-        
-        // Nested objects
-        let users: UserData?
-        let restaurants: RestaurantData?
-        let photos: [PhotoData]?
-        let meal_reactions: [ReactionData]?
-    }
-    
-    struct UserData: Codable {
-        let id: String
-        let username: String
-        let display_name: String?
-        let bio: String?
-        let avatar_url: String?
-    }
-    
-    struct RestaurantData: Codable {
-        let id: String
-        let google_place_id: String?
-        let name: String
-        let address: String?
-        let city: String?
-        let state: String?
-        let latitude: Double?  // New separate column
-        let longitude: Double? // New separate column
-        let rating: Double?
-        let price_range: Int?
-        let google_maps_url: String?
-        let image_url: String?
-    }
-    
-    struct PhotoData: Codable {
-        let id: String
-        let meal_id: String?
-        let collaborative_meal_id: String?
-        let user_id: String
-        let url: String
-        let storage_path: String
-        let alt_text: String?
-        let is_primary: Bool?
-        let course: String?
-        let created_at: String?
-    }
-    
-    struct ReactionData: Codable {
-        let id: String
-        let user_id: String
-        let reaction_type: String
-    }
+    // Query model types are now in Models/QueryModels.swift
     
     // Query meals with restaurant data within radius
     let queryResult: [MealQueryResult] = try await supabase.client
@@ -821,7 +687,7 @@ func fetchMealsWithRestaurants(
         } ?? []
         
         // Check if current user has reacted
-        let userReaction = reactions.first { $0.userId == currentUserId }
+        let _ = reactions.first { $0.userId == currentUserId }
         
         // Count reactions by type
         var reactionCounts: [ReactionType: Int] = [:]
@@ -842,6 +708,162 @@ func fetchMealsWithRestaurants(
     print("📊 Returning \(mealDetails.count) meals within radius")
     return mealDetails.sorted { $0.meal.eatenAt > $1.meal.eatenAt }
 }
+
+    func fetchMealsForRestaurant(restaurantId: String) async {
+        isLoading = true
+        defer { isLoading = false }
+        
+        do {
+            guard supabase.currentUser?.id != nil else {
+                throw NSError(domain: "AuthError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
+            }
+            
+            // Query model types are now in Models/QueryModels.swift
+            
+            // Query all meals for this specific restaurant
+            let queryResult: [MealQueryResult] = try await supabase.client
+                .from("meals")
+                .select("""
+                    *,
+                    users!user_id(*),
+                    restaurants!restaurant_id(*),
+                    photos(*),
+                    meal_reactions(*)
+                """)
+                .eq("restaurant_id", value: restaurantId)
+                .eq("privacy", value: "public")
+                .order("eaten_at", ascending: false)
+                .execute()
+                .value
+            
+            print("🍽️ Found \(queryResult.count) meals for restaurant \(restaurantId)")
+            
+            // Convert to MealWithDetails
+            let mealDetails = queryResult.compactMap { result -> MealWithDetails? in
+                guard let userData = result.users,
+                      let restaurantData = result.restaurants else {
+                    return nil
+                }
+                
+                // Parse dates
+                let dateFormatter = ISO8601DateFormatter()
+                dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                
+                // Create User
+                let user = User(
+                    id: UUID(uuidString: userData.id) ?? UUID(),
+                    username: userData.username,
+                    displayName: userData.display_name,
+                    bio: userData.bio,
+                    avatarUrl: userData.avatar_url,
+                    locationEnabled: true,
+                    createdAt: Date(),
+                    updatedAt: Date()
+                )
+                
+                // Create Location from coordinates
+                let locationPoint = LocationPoint(
+                    latitude: restaurantData.latitude ?? 0,
+                    longitude: restaurantData.longitude ?? 0
+                )
+                
+                // Create Restaurant
+                let restaurant = Restaurant(
+                    id: UUID(uuidString: restaurantData.id) ?? UUID(),
+                    googlePlaceId: restaurantData.google_place_id,
+                    name: restaurantData.name,
+                    address: restaurantData.address,
+                    city: restaurantData.city,
+                    state: restaurantData.state,
+                    postalCode: nil,
+                    country: "US",
+                    phone: nil,
+                    location: locationPoint,
+                    rating: restaurantData.rating,
+                    priceRange: restaurantData.price_range,
+                    categories: [],
+                    hours: nil,
+                    googleMapsUrl: restaurantData.google_maps_url,
+                    imageUrl: restaurantData.image_url,
+                    createdAt: Date(),
+                    updatedAt: Date()
+                )
+                
+                // Create Meal
+                let meal = Meal(
+                    id: UUID(uuidString: result.id) ?? UUID(),
+                    userId: UUID(uuidString: result.user_id) ?? UUID(),
+                    restaurant: restaurant,
+                    mealType: MealType(rawValue: result.meal_type) ?? .restaurant,
+                    title: result.title,
+                    description: result.description,
+                    ingredients: result.ingredients,
+                    tags: result.tags ?? [],
+                    privacy: .public,
+                    location: locationPoint,
+                    rating: result.rating,
+                    status: .published,
+                    cost: result.cost.map { Decimal($0) },
+                    eatenAt: dateFormatter.date(from: result.eaten_at) ?? Date(),
+                    createdAt: dateFormatter.date(from: result.created_at) ?? Date(),
+                    updatedAt: dateFormatter.date(from: result.updated_at) ?? Date()
+                )
+                
+                // Create Photos
+                let photos = result.photos?.map { photoData in
+                    Photo(
+                        id: UUID(uuidString: photoData.id) ?? UUID(),
+                        mealId: meal.id,
+                        collaborativeMealId: photoData.collaborative_meal_id.flatMap { UUID(uuidString: $0) },
+                        userId: UUID(uuidString: photoData.user_id) ?? UUID(),
+                        storagePath: photoData.storage_path,
+                        url: photoData.url,
+                        altText: photoData.alt_text,
+                        isPrimary: photoData.is_primary ?? false,
+                        course: photoData.course.flatMap { Course(rawValue: $0) },
+                        createdAt: dateFormatter.date(from: photoData.created_at ?? "") ?? Date()
+                    )
+                } ?? []
+                
+                // Create Reactions
+                let reactions = result.meal_reactions?.map { reactionData in
+                    MealReaction(
+                        id: UUID(uuidString: reactionData.id) ?? UUID(),
+                        userId: UUID(uuidString: reactionData.user_id) ?? UUID(),
+                        mealId: meal.id,
+                        reactionType: ReactionType(rawValue: reactionData.reaction_type) ?? .like,
+                        createdAt: Date()
+                    )
+                } ?? []
+                
+                // Calculate distance if we have user location
+                let distance: Int? = nil // Restaurant detail view doesn't need distance
+                
+                return MealWithDetails(
+                    meal: meal,
+                    user: user,
+                    restaurant: restaurant,
+                    photos: photos,
+                    reactions: reactions,
+                    distance: distance ?? 0
+                )
+            }
+            
+            // Store in a restaurant-specific cache or update nearbyMeals
+            // For now, we'll update nearbyMeals to include all restaurant meals
+            self.nearbyMeals = self.nearbyMeals.filter { $0.restaurant?.id.uuidString != restaurantId } + mealDetails
+            
+        } catch {
+            self.error = error
+            print("❌ Failed to fetch meals for restaurant: \(error)")
+        }
+    }
+    
+    func getMealsForRestaurant(restaurantId: String) -> [MealWithDetails] {
+        // Return cached meals for this specific restaurant from nearbyMeals
+        return nearbyMeals.filter { $0.restaurant?.id.uuidString == restaurantId }
+            .sorted { $0.meal.eatenAt > $1.meal.eatenAt }
+    }
 }
 
 // MARK: - MealWithDetails Extension
