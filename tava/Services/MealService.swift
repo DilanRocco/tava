@@ -17,6 +17,8 @@ class MealService: ObservableObject {
     @Published var comments: [Comment] = []
     @Published var isLoadingComments = false
     
+    @Published var savedMeals: [MealWithDetails] = []
+    @Published var isLoadingSavedMeals = false
     
     @Published var draftMeals: [MealWithPhotos] = []
     @Published var isLoadingDrafts = false
@@ -94,6 +96,50 @@ class MealService: ObservableObject {
         }
     }
     
+    func fetchUserMeals(limit: Int = 20, offset: Int = 0) async {
+        isLoading = true
+        defer { isLoading = false }
+        
+        do {
+            guard let currentUserId = supabase.currentUser?.id else {
+                throw NSError(domain: "AuthError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
+            }
+            
+            // Fetch only the current user's meals
+            let queryResult: [MealQueryResult] = try await supabase.client
+                .from("meals")
+                .select("""
+                    *, 
+                    users!user_id(*),
+                    restaurants!restaurant_id(*),
+                    photos(*),
+                    meal_reactions(*)
+                """)
+                .eq("user_id", value: currentUserId.uuidString)
+                .eq("privacy", value: "public")
+                .order("eaten_at", ascending: false)
+                .limit(limit)
+                .range(from: offset, to: offset + limit - 1)
+                .execute()
+                .value
+            
+            // Transform to MealWithDetails
+            let mealDetails = transformQueryResultsToMealWithDetails(queryResult)
+            
+            if offset == 0 {
+                self.userMeals = mealDetails
+            } else {
+                self.userMeals.append(contentsOf: mealDetails)
+            }
+            
+            print("✅ Fetched \(mealDetails.count) user meals")
+            
+        } catch {
+            self.error = error
+            print("❌ Failed to fetch user meals: \(error)")
+        }
+    }
+
     func fetchUserFeed(limit: Int = 20, offset: Int = 0) async {
         isLoading = true
         defer { isLoading = false }
@@ -118,7 +164,7 @@ class MealService: ObservableObject {
             // This would need proper parsing based on the function return structure
             // For now, we'll use a direct query approach
             
-            let mealsResponse: [Meal] = try await supabase.client
+            let queryResult: [MealQueryResult] = try await supabase.client
                 .from("meals")
                 .select("""
                     *, 
@@ -135,7 +181,7 @@ class MealService: ObservableObject {
                 .value
             
             // Transform to MealWithDetails
-            let mealDetails = await transformToMealWithDetails(meals: mealsResponse)
+            let mealDetails = transformQueryResultsToMealWithDetails(queryResult)
             
             if offset == 0 {
                 self.meals = mealDetails
@@ -216,6 +262,93 @@ class MealService: ObservableObject {
             .insert([bookmark])
             .execute()
         print("Bookmark added for meal \(mealId)")
+        
+        // Refresh saved meals
+        await fetchSavedMeals()
+    }
+    
+    func removeBookmark(mealId: String) async throws {
+        guard let currentUserId = supabase.currentUser?.id else {
+            throw NSError(domain: "AuthError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
+        }
+        
+        try await supabase.client
+            .from("bookmarks")
+            .delete()
+            .eq("meal_id", value: mealId)
+            .eq("user_id", value: currentUserId)
+            .execute()
+        
+        print("Bookmark removed for meal \(mealId)")
+        
+        // Refresh saved meals
+        await fetchSavedMeals()
+    }
+    
+    func toggleBookmark(mealId: String, isBookmarked: Bool) async throws {
+        if isBookmarked {
+            try await removeBookmark(mealId: mealId)
+        } else {
+            try await addBookmark(mealId: mealId)
+        }
+    }
+    
+    func fetchSavedMeals() async {
+        isLoadingSavedMeals = true
+        defer { isLoadingSavedMeals = false }
+        
+        do {
+            guard let currentUserId = supabase.currentUser?.id else {
+                throw NSError(domain: "AuthError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
+            }
+            
+            // Get bookmarked meal IDs with creation dates
+            let bookmarks: [Bookmark] = try await supabase.client
+                .from("bookmarks")
+                .select("*")
+                .eq("user_id", value: currentUserId)
+                .order("created_at", ascending: false)
+                .execute()
+                .value
+            
+            let mealIds = bookmarks.compactMap { $0.mealId }
+            
+            guard !mealIds.isEmpty else {
+                self.savedMeals = []
+                return
+            }
+            
+            // Fetch meal details for bookmarked meals
+            let queryResult: [MealQueryResult] = try await supabase.client
+                .from("meals")
+                .select("""
+                    *,
+                    users!user_id(*),
+                    restaurants!restaurant_id(*),
+                    photos(*),
+                    meal_reactions(*)
+                """)
+                .in("id", values: mealIds.map { $0.uuidString })
+                .eq("privacy", value: "public")
+                .execute()
+                .value
+            
+            // Use the shared transformation function
+            let mealDetails = transformQueryResultsToMealWithDetails(queryResult)
+            
+            // Sort by bookmark creation date (most recent first)
+            let sortedMeals = mealDetails.sorted { meal1, meal2 in
+                let bookmark1 = bookmarks.first { $0.mealId == meal1.meal.id }
+                let bookmark2 = bookmarks.first { $0.mealId == meal2.meal.id }
+                return bookmark1?.createdAt ?? Date() > bookmark2?.createdAt ?? Date()
+            }
+            
+            self.savedMeals = sortedMeals
+            
+        } catch {
+            self.error = error
+            print("❌ Failed to fetch saved meals: \(error)")
+        }
     }
 
     func addReaction(mealId: UUID, reactionType: ReactionType) async throws {
@@ -271,11 +404,113 @@ class MealService: ObservableObject {
         }
     }
     
-    private func transformToMealWithDetails(meals: [Meal]) async -> [MealWithDetails] {
-        // This would implement the actual transformation logic
-        // For now, return empty array - this would need proper implementation
-        // based on the actual response structure from Supabase
-        return []
+    private func transformQueryResultsToMealWithDetails(_ queryResults: [MealQueryResult]) -> [MealWithDetails] {
+        return queryResults.compactMap { result -> MealWithDetails? in
+            guard let userData = result.users else { return nil }
+            
+            let dateFormatter = ISO8601DateFormatter()
+            dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            
+            // Create User
+            let user = User(
+                id: UUID(uuidString: userData.id) ?? UUID(),
+                username: userData.username,
+                displayName: userData.display_name,
+                bio: userData.bio,
+                avatarUrl: userData.avatar_url,
+                locationEnabled: true,
+                createdAt: Date(),
+                updatedAt: Date()
+            )
+            
+            // Create Restaurant if exists
+            var restaurant: Restaurant? = nil
+            if let restaurantData = result.restaurants {
+                let locationPoint = LocationPoint(
+                    latitude: restaurantData.latitude ?? 0,
+                    longitude: restaurantData.longitude ?? 0
+                )
+                
+                restaurant = Restaurant(
+                    id: UUID(uuidString: restaurantData.id) ?? UUID(),
+                    googlePlaceId: restaurantData.google_place_id,
+                    name: restaurantData.name,
+                    address: restaurantData.address,
+                    city: restaurantData.city,
+                    state: restaurantData.state,
+                    postalCode: nil,
+                    country: "US",
+                    phone: nil,
+                    location: locationPoint,
+                    rating: restaurantData.rating,
+                    priceRange: restaurantData.price_range,
+                    categories: [],
+                    hours: nil,
+                    googleMapsUrl: restaurantData.google_maps_url,
+                    imageUrl: restaurantData.image_url,
+                    createdAt: Date(),
+                    updatedAt: Date()
+                )
+            }
+            
+            let locationPoint = restaurant?.location ?? LocationPoint(latitude: 0, longitude: 0)
+            
+            // Create Meal
+            let meal = Meal(
+                id: UUID(uuidString: result.id) ?? UUID(),
+                userId: UUID(uuidString: result.user_id) ?? UUID(),
+                restaurant: restaurant,
+                mealType: MealType(rawValue: result.meal_type) ?? .restaurant,
+                title: result.title,
+                description: result.description,
+                ingredients: result.ingredients,
+                tags: result.tags ?? [],
+                privacy: MealPrivacy(rawValue: result.privacy) ?? .public,
+                location: locationPoint,
+                rating: result.rating,
+                status: MealStatus(rawValue: result.status) ?? .published,
+                cost: result.cost.map { Decimal($0) },
+                eatenAt: dateFormatter.date(from: result.eaten_at) ?? Date(),
+                createdAt: dateFormatter.date(from: result.created_at) ?? Date(),
+                updatedAt: dateFormatter.date(from: result.updated_at) ?? Date()
+            )
+            
+            // Create Photos
+            let photos = result.photos?.map { photoData in
+                Photo(
+                    id: UUID(uuidString: photoData.id) ?? UUID(),
+                    mealId: meal.id,
+                    collaborativeMealId: photoData.collaborative_meal_id.flatMap { UUID(uuidString: $0) },
+                    userId: UUID(uuidString: photoData.user_id) ?? UUID(),
+                    storagePath: photoData.storage_path,
+                    url: photoData.url,
+                    altText: photoData.alt_text,
+                    isPrimary: photoData.is_primary ?? false,
+                    course: photoData.course.flatMap { Course(rawValue: $0) },
+                    createdAt: dateFormatter.date(from: photoData.created_at ?? "") ?? Date()
+                )
+            } ?? []
+            
+            // Create Reactions
+            let reactions = result.meal_reactions?.map { reactionData in
+                MealReaction(
+                    id: UUID(uuidString: reactionData.id) ?? UUID(),
+                    userId: UUID(uuidString: reactionData.user_id) ?? UUID(),
+                    mealId: meal.id,
+                    reactionType: ReactionType(rawValue: reactionData.reaction_type) ?? .like,
+                    createdAt: Date()
+                )
+            } ?? []
+            
+            return MealWithDetails(
+                meal: meal,
+                user: user,
+                restaurant: restaurant,
+                photos: photos,
+                reactions: reactions,
+                distance: 0
+            )
+        }
     }
     
     // MARK: - Comment Models (now in Models/QueryModels.swift)

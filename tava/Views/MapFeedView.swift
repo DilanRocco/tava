@@ -16,15 +16,10 @@ struct MapFeedView: View {
     @EnvironmentObject var googlePlacesService: GooglePlacesService
     
     @State private var showFeed = false
-    @State private var selectedMeal: MealWithDetails?
     @State private var selectedRestaurant: RestaurantWithDetails?
     @State private var showFilters = false
     @State private var showProfile = false
-    @State private var showMealDetail = false
-    @State private var showRestaurantDetail = false
     @State private var showRestaurantGrid = false
-    @State private var restaurantMealsForFeed: [MealWithDetails] = []
-    @State private var showRestaurantFeed = false
     @State private var friendsFilter: FriendsFilterOption = .all
     @State private var mapClusters: [MapCluster] = []
     @State private var currentZoomLevel: Double = 15.0
@@ -48,7 +43,7 @@ struct MapFeedView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Citizen-Style Mapbox Map with Clustering
                 CitizenStyleMapView(
@@ -86,39 +81,16 @@ struct MapFeedView: View {
                 )
             }
             .navigationBarHidden(true)
+            .navigationDestination(isPresented: $showRestaurantGrid) {
+                if let selectedRestaurant = selectedRestaurant {
+                    RestaurantNavigationView(
+                        restaurant: selectedRestaurant.restaurant,
+                        meals: selectedRestaurant.meals
+                    )
+                }
+            }
             .sheet(isPresented: $showFeed) {
                 MapFeedListView(meals: restaurantMeals)
-            }
-            .sheet(isPresented: $showRestaurantGrid) {
-                if let selectedRestaurant = selectedRestaurant {
-                    RestaurantMealsGridView(
-                        restaurant: selectedRestaurant.restaurant,
-                        meals: selectedRestaurant.meals,
-                        onRestaurantDetailsTap: {
-                            showRestaurantGrid = false
-                            showRestaurantDetail = true
-                        },
-                        onMealTap: { meal in
-                            showRestaurantGrid = false
-                            restaurantMealsForFeed = selectedRestaurant.meals
-                            selectedMeal = meal
-                            showRestaurantFeed = true
-                        }
-                    )
-                }
-            }
-            .sheet(isPresented: $showRestaurantFeed) {
-                if let selectedMeal = selectedMeal {
-                    RestaurantFeedView(
-                        meals: restaurantMealsForFeed,
-                        startingMeal: selectedMeal
-                    )
-                }
-            }
-            .sheet(isPresented: $showRestaurantDetail) {
-                if let selectedRestaurant = selectedRestaurant {
-                    RestaurantDetailView(restaurantWithDetails: selectedRestaurant)
-                }
             }
             .sheet(isPresented: $showProfile) {
                 ProfileView()
@@ -135,21 +107,21 @@ struct MapFeedView: View {
                     await mealService.fetchNearbyMeals(location: userLocation, radius: 10000) // 10km radius
                 }
             }
-            .onChange(of: restaurantMeals.count) { _ in
+            .onChange(of: restaurantMeals.count) {
                 // Debounce clustering updates
                 Task {
-                    await Task.sleep(100_000_000) // 100ms
+                    try await Task.sleep(nanoseconds: 100_000_000) // 100ms
                     mapClusters = generateClusters(from: restaurantMeals, zoomLevel: currentZoomLevel)
                 }
             }
-            .onChange(of: currentZoomLevel) { _ in
+            .onChange(of: currentZoomLevel) {
                 // Debounce clustering updates
                 Task {
-                    await Task.sleep(100_000_000) // 100ms
+                    try await Task.sleep(nanoseconds: 100_000_000) // 100ms
                     mapClusters = generateClusters(from: restaurantMeals, zoomLevel: currentZoomLevel)
                 }
             }
-            .onChange(of: locationService.location) { newLocation in
+            .onChange(of: locationService.location) { _, newLocation in
                 // Fetch meals when location changes
                 if let location = newLocation {
                     Task {
@@ -677,7 +649,7 @@ struct CitizenStyleMapView: UIViewRepresentable {
         let renderer = UIGraphicsImageRenderer(size: size)
         
         return renderer.image { context in
-            let rect = CGRect(origin: .zero, size: size)
+            _ = CGRect(origin: .zero, size: size)
             
             // Draw white circle
             context.cgContext.setFillColor(UIColor.white.cgColor)
@@ -887,13 +859,46 @@ struct MealDetailModal: View {
     }
 }
 
+// MARK: - Restaurant Navigation View (for NavigationStack)
+struct RestaurantNavigationView: View {
+    let restaurant: Restaurant
+    let meals: [MealWithDetails]
+    @State private var selectedMeal: MealWithDetails?
+    @State private var showRestaurantDetail = false
+    @State private var showRestaurantFeed = false
+    
+    var body: some View {
+        RestaurantMealsGridView(
+            restaurant: restaurant,
+            meals: meals,
+            onRestaurantDetailsTap: {
+                showRestaurantDetail = true
+            },
+            onMealTap: { meal in
+                selectedMeal = meal
+                showRestaurantFeed = true
+            }
+        )
+        .navigationDestination(isPresented: $showRestaurantDetail) {
+            RestaurantDetailView(restaurantWithDetails: RestaurantWithDetails(restaurant: restaurant, meals: meals))
+        }
+        .navigationDestination(isPresented: $showRestaurantFeed) {
+            if let selectedMeal = selectedMeal {
+                RestaurantFeedView(
+                    meals: meals,
+                    startingMeal: selectedMeal
+                )
+            }
+        }
+    }
+}
+
 // MARK: - Restaurant Meals Grid View
 struct RestaurantMealsGridView: View {
     let restaurant: Restaurant
     let meals: [MealWithDetails]
     let onRestaurantDetailsTap: () -> Void
     let onMealTap: (MealWithDetails) -> Void
-    @Environment(\.dismiss) private var dismiss
     
     private let columns = [
         GridItem(.flexible(), spacing: 8),
@@ -901,33 +906,24 @@ struct RestaurantMealsGridView: View {
     ]
     
     var body: some View {
-        NavigationView {
-            ScrollView {
-                VStack(spacing: 20) {
-                    // Restaurant Header with Details Button
-                    restaurantHeaderSection
-                    
-                    // Meals Grid
-                    LazyVGrid(columns: columns, spacing: 8) {
-                        ForEach(meals, id: \.id) { meal in
-                            MealGridItemView(meal: meal) {
-                                onMealTap(meal)
-                            }
+        ScrollView {
+            VStack(spacing: 20) {
+                // Restaurant Header with Details Button
+                restaurantHeaderSection
+                
+                // Meals Grid
+                LazyVGrid(columns: columns, spacing: 8) {
+                    ForEach(meals, id: \.id) { meal in
+                        MealGridItemView(meal: meal) {
+                            onMealTap(meal)
                         }
                     }
-                    .padding(.horizontal)
                 }
-            }
-            .navigationTitle(restaurant.name)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Close") {
-                        dismiss()
-                    }
-                }
+                .padding(.horizontal)
             }
         }
+        .navigationTitle(restaurant.name)
+        .navigationBarTitleDisplayMode(.inline)
     }
     
     private var restaurantHeaderSection: some View {
@@ -1187,30 +1183,9 @@ struct RestaurantFeedView: View {
     
     private var headerView: some View {
         HStack {
-            Button("Close") {
-                dismiss()
-            }
-            .foregroundColor(.white)
-            .font(.headline)
-            
-            Spacer()
-            
-            if let restaurant = meals.first?.restaurant {
-                Text(restaurant.name)
-                    .font(.headline)
-                    .fontWeight(.bold)
-                    .foregroundColor(.white)
-            }
-            
-            Spacer()
-            
-            // Placeholder for balance
-            Text("Close")
-                .foregroundColor(.clear)
-                .font(.headline)
         }
         .padding(.horizontal, 20)
-        .padding(.top, 50)
+        .padding(.top, 10)
     }
     
     private func feedScrollView(geometry: GeometryProxy) -> some View {
@@ -1276,7 +1251,6 @@ struct RestaurantFeedView: View {
 // MARK: - Restaurant Detail View
 struct RestaurantDetailView: View {
     let restaurantWithDetails: RestaurantWithDetails
-    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var mealService: MealService
     @EnvironmentObject var supabase: SupabaseClient
     
@@ -1343,47 +1317,38 @@ struct RestaurantDetailView: View {
     }
     
     var body: some View {
-        NavigationView {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    // Restaurant Header
-                    restaurantHeader
-                    
-                    // Stats Summary
-                    statsSection
-                    
-                    Divider()
-                    
-                    // Time Filter
-                    timeFilterSection
-                    
-                    // Meals grouped by date
-                    if groupedMeals.isEmpty {
-                        emptyStateView
-                    } else {
-                        mealsSection
-                    }
-                    
-                    if isLoadingMore {
-                        ProgressView()
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                    }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                // Restaurant Header
+                restaurantHeader
+                
+                // Stats Summary
+                statsSection
+                
+                Divider()
+                
+                // Time Filter
+                timeFilterSection
+                
+                // Meals grouped by date
+                if groupedMeals.isEmpty {
+                    emptyStateView
+                } else {
+                    mealsSection
                 }
-                .padding()
-            }
-            .navigationTitle("Restaurant")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
-                        dismiss()
-                    }
+                
+                if isLoadingMore {
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
+                        .padding()
                 }
             }
-            .task {
-                await loadAllRestaurantMeals()
-            }
+            .padding()
+        }
+        .navigationTitle("Restaurant Details")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            await loadAllRestaurantMeals()
         }
     }
     

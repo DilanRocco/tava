@@ -44,7 +44,8 @@ struct ProfileView: View {
             EditProfileView()
         }
         .task {
-            await mealService.fetchUserFeed()
+            await mealService.fetchUserMeals()
+            await mealService.fetchSavedMeals()
         }
     }
     
@@ -198,59 +199,127 @@ struct ProfileView: View {
     }
     
     private var mealsGridView: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 3), spacing: 2) {
-            ForEach(mealService.userMeals) { meal in
-                NavigationLink(destination: EmptyView()) {
-                    if let photo = meal.primaryPhoto, !photo.url.isEmpty {
-                        AsyncImage(url: URL(string: photo.url)) { image in
-                            image
-                                .resizable()
-                                .aspectRatio(1, contentMode: .fill)
-                        } placeholder: {
-                            Rectangle()
-                                .fill(Color(.systemGray5))
+        Group {
+            if mealService.userMeals.isEmpty && !mealService.isLoading {
+                VStack {
+                    Image(systemName: "fork.knife")
+                        .font(.system(size: 50))
+                        .foregroundColor(.gray)
+                    
+                    Text("No meals yet")
+                        .font(.headline)
+                        .foregroundColor(.gray)
+                    
+                    Text("Start sharing your culinary adventures!")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                }
+                .padding(.top, 60)
+            } else {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 3), spacing: 2) {
+                    ForEach(mealService.userMeals) { meal in
+                        NavigationLink(destination: EmptyView()) {
+                            if let photo = meal.primaryPhoto, !photo.url.isEmpty {
+                                AsyncImage(url: URL(string: photo.url)) { image in
+                                    image
+                                        .resizable()
+                                        .aspectRatio(1, contentMode: .fill)
+                                } placeholder: {
+                                    Rectangle()
+                                        .fill(Color(.systemGray5))
+                                }
+                                .clipped()
+                            } else {
+                                Rectangle()
+                                    .fill(Color(.systemGray5))
+                                    .aspectRatio(1, contentMode: .fit)
+                                    .overlay(
+                                        Image(systemName: "fork.knife")
+                                            .foregroundColor(.gray)
+                                    )
+                            }
                         }
-                        .clipped()
-                    } else {
-                        Rectangle()
-                            .fill(Color(.systemGray5))
-                            .aspectRatio(1, contentMode: .fit)
-                            .overlay(
-                                Image(systemName: "fork.knife")
-                                    .foregroundColor(.gray)
-                            )
                     }
                 }
+                .padding(.horizontal, 0)
             }
         }
-        .padding(.horizontal, 0)
+        .refreshable {
+            await mealService.fetchUserMeals()
+        }
     }
     
     private var mealsListView: some View {
-        LazyVStack(spacing: 16) {
-            ForEach(mealService.userMeals) { meal in
-                MealCardView(meal: meal)
-                    .padding(.horizontal, 20)
+        Group {
+            if mealService.userMeals.isEmpty && !mealService.isLoading {
+                VStack {
+                    Image(systemName: "list.bullet")
+                        .font(.system(size: 50))
+                        .foregroundColor(.gray)
+                    
+                    Text("No meals yet")
+                        .font(.headline)
+                        .foregroundColor(.gray)
+                    
+                    Text("Start sharing your culinary adventures!")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                }
+                .padding(.top, 60)
+            } else {
+                LazyVStack(spacing: 16) {
+                    ForEach(mealService.userMeals) { meal in
+                        MealCardView(meal: meal)
+                            .padding(.horizontal, 20)
+                    }
+                }
+                .padding(.top, 16)
             }
         }
-        .padding(.top, 16)
+        .refreshable {
+            await mealService.fetchUserMeals()
+        }
     }
     
     private var savedMealsView: some View {
-        VStack {
-            Image(systemName: "heart")
-                .font(.system(size: 50))
-                .foregroundColor(.gray)
-            
-            Text("No saved meals yet")
-                .font(.headline)
-                .foregroundColor(.gray)
-            
-            Text("Meals you save will appear here")
-                .font(.subheadline)
-                .foregroundColor(.gray)
+        Group {
+            if mealService.isLoadingSavedMeals {
+                VStack {
+                    ProgressView()
+                        .padding()
+                    Text("Loading saved meals...")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                }
+                .padding(.top, 60)
+            } else if mealService.savedMeals.isEmpty {
+                VStack {
+                    Image(systemName: "heart")
+                        .font(.system(size: 50))
+                        .foregroundColor(.gray)
+                    
+                    Text("No saved meals yet")
+                        .font(.headline)
+                        .foregroundColor(.gray)
+                    
+                    Text("Meals you save will appear here")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                }
+                .padding(.top, 60)
+            } else {
+                LazyVStack(spacing: 16) {
+                    ForEach(mealService.savedMeals) { meal in
+                        MealCardView(meal: meal)
+                            .padding(.horizontal, 20)
+                    }
+                }
+                .padding(.top, 16)
+            }
         }
-        .padding(.top, 60)
+        .refreshable {
+            await mealService.fetchSavedMeals()
+        }
     }
 }
 
