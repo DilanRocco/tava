@@ -316,7 +316,8 @@ class DraftMealService: ObservableObject {
                 let postal_code: String?
                 let country: String?
                 let phone: String?
-                let location: String? // PostGIS POINT format
+                let longitude: Double?
+                let latitude: Double?
                 let rating: Double?
                 let price_range: Int?
                 let categories: [GooglePlaceCategory]
@@ -337,7 +338,8 @@ class DraftMealService: ObservableObject {
                 postal_code: restaurant.postalCode,
                 country: restaurant.country,
                 phone: restaurant.phone,
-                location: restaurant.location.map { "POINT(\($0.longitude) \($0.latitude))" },
+                longitude: restaurant.location?.longitude,
+                latitude: restaurant.location?.latitude,
                 rating: restaurant.rating,
                 price_range: restaurant.priceRange,
                 categories: restaurant.categories,

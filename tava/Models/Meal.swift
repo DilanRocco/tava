@@ -72,6 +72,7 @@ struct MealWithDetails: Codable, Identifiable {
     let restaurant: Restaurant?
     let photos: [Photo]
     let reactions: [MealReaction]
+    let distance: Int
     
     var id: UUID { meal.id }
     

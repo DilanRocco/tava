@@ -3,6 +3,22 @@ import MapboxMaps
 import CoreLocation
 import Combine
 
+// MARK: - Data Structures for Clustering
+struct MapCluster: Identifiable {
+    let id = UUID()
+    let coordinate: CLLocationCoordinate2D
+    let meals: [MealWithDetails]
+    let restaurant: Restaurant?
+    
+    var count: Int { meals.count }
+    var isCluster: Bool { meals.count > 1 }
+}
+
+struct RestaurantWithDetails {
+    let restaurant: Restaurant
+    let meals: [MealWithDetails]
+}
+
 struct MapFeedView: View {
     @EnvironmentObject var locationService: LocationService
     @EnvironmentObject var mealService: MealService
@@ -11,9 +27,14 @@ struct MapFeedView: View {
     
     @State private var showFeed = false
     @State private var selectedMeal: MealWithDetails?
+    @State private var selectedRestaurant: RestaurantWithDetails?
     @State private var showFilters = false
     @State private var showProfile = false
+    @State private var showMealDetail = false
+    @State private var showRestaurantDetail = false
     @State private var friendsFilter: FriendsFilterOption = .all
+    @State private var mapClusters: [MapCluster] = []
+    @State private var currentZoomLevel: Double = 15.0
     
     enum FriendsFilterOption: String, CaseIterable {
         case all = "All"
@@ -21,30 +42,55 @@ struct MapFeedView: View {
         case nonFriends = "Discover"
     }
     
-    var filteredMeals: [MealWithDetails] {
-        switch friendsFilter {
-        case .all:
-            return mealService.nearbyMeals
-        case .friends:
-            return mealService.nearbyMeals.filter { $0.user.id != supabase.currentUser?.id }
-        case .nonFriends:
-            return mealService.nearbyMeals.filter { $0.user.id == supabase.currentUser?.id }
+    var restaurantMeals: [MealWithDetails] {
+        let allMeals = mealService.nearbyMeals.filter { $0.restaurant != nil }
+        
+        print("🗺️ MapFeedView - Total nearby meals: \(mealService.nearbyMeals.count)")
+        print("🗺️ MapFeedView - Meals with restaurants: \(allMeals.count)")
+        
+        for meal in mealService.nearbyMeals {
+            if let restaurant = meal.restaurant {
+                print("✅ Meal '\(meal.meal.displayTitle)' at \(restaurant.name) - Location: \(restaurant.location?.latitude ?? 0), \(restaurant.location?.longitude ?? 0)")
+            } else {
+                print("❌ Meal '\(meal.meal.displayTitle)' has no restaurant")
+            }
         }
+        
+        let filtered = switch friendsFilter {
+        case .all:
+            allMeals
+        case .friends:
+            allMeals.filter { $0.user.id != supabase.currentUser?.id }
+        case .nonFriends:
+            allMeals.filter { $0.user.id == supabase.currentUser?.id }
+        }
+        
+        print("🗺️ MapFeedView - After filter (\(friendsFilter.rawValue)): \(filtered.count) meals")
+        return filtered
     }
     
     var body: some View {
         NavigationView {
             ZStack {
-                // Citizen-Style Mapbox Map
+                // Citizen-Style Mapbox Map with Clustering
                 CitizenStyleMapView(
-                    meals: filteredMeals,
-                    userLocation: locationService.location
+                    meals: restaurantMeals,
+                    userLocation: locationService.location,
+                    clusters: $mapClusters,
+                    currentZoom: $currentZoomLevel,
+                    onMealTap: { meal in
+                        selectedMeal = meal
+                        showMealDetail = true
+                    },
+                    onClusterTap: { cluster in
+                        // Handle cluster tap - could zoom to cluster bounds
+                    }
                 )
                 .ignoresSafeArea()
                 
                 // Modern UI Overlay with Profile and Filter
                 ModernMapOverlay(
-                    mealCount: filteredMeals.count,
+                    mealCount: restaurantMeals.count,
                     showFeed: $showFeed,
                     showProfile: $showProfile,
                     showFilters: $showFilters,
@@ -53,7 +99,27 @@ struct MapFeedView: View {
             }
             .navigationBarHidden(true)
             .sheet(isPresented: $showFeed) {
-                MapFeedListView(meals: filteredMeals)
+                MapFeedListView(meals: restaurantMeals)
+            }
+            .sheet(isPresented: $showMealDetail) {
+                if let selectedMeal = selectedMeal {
+                    MealDetailModal(
+                        meal: selectedMeal,
+                        onRestaurantTap: {
+                            showMealDetail = false
+                            selectedRestaurant = RestaurantWithDetails(
+                                restaurant: selectedMeal.restaurant!,
+                                meals: restaurantMeals.filter { $0.restaurant?.id == selectedMeal.restaurant?.id }
+                            )
+                            showRestaurantDetail = true
+                        }
+                    )
+                }
+            }
+            .sheet(isPresented: $showRestaurantDetail) {
+                if let selectedRestaurant = selectedRestaurant {
+                    RestaurantDetailView(restaurantWithDetails: selectedRestaurant)
+                }
             }
 //            .sheet(item: $selectedMeal) { meal in
 //                MealDetailView(meal: meal)
@@ -69,8 +135,143 @@ struct MapFeedView: View {
             }
             .task {
                 await locationService.requestLocationPermission()
+                
+                // Fetch nearby meals for the map
+                if let userLocation = locationService.location {
+                    print("🌍 MapFeedView - Fetching nearby meals from user location")
+                    await mealService.fetchNearbyMeals(location: userLocation, radius: 10000) // 10km radius
+                } else {
+                    print("❌ MapFeedView - No user location available")
+                }
+            }
+            .onChange(of: restaurantMeals.count) { _ in
+                // Update clusters when meals change
+                mapClusters = generateClusters(from: restaurantMeals, zoomLevel: currentZoomLevel)
+            }
+            .onChange(of: currentZoomLevel) { _ in
+                // Update clusters when zoom changes
+                mapClusters = generateClusters(from: restaurantMeals, zoomLevel: currentZoomLevel)
+            }
+            .onChange(of: locationService.location) { newLocation in
+                // Fetch meals when location changes
+                if let location = newLocation {
+                    print("📍 MapFeedView - Location changed, refetching meals")
+                    Task {
+                        await mealService.fetchNearbyMeals(location: location, radius: 10000)
+                    }
+                }
             }
         }
+    }
+    
+    // MARK: - Clustering Logic
+    private func generateClusters(from meals: [MealWithDetails], zoomLevel: Double) -> [MapCluster] {
+        print("🎯 generateClusters - Input: \(meals.count) meals, zoom: \(zoomLevel)")
+        
+        guard !meals.isEmpty else { 
+            print("❌ generateClusters - No meals to cluster")
+            return [] 
+        }
+        
+        // Group meals by restaurant first
+        let restaurantGroups = Dictionary(grouping: meals) { meal in
+            meal.restaurant?.id ?? meal.id
+        }
+        
+        print("🏪 generateClusters - Grouped into \(restaurantGroups.count) restaurant groups")
+        
+        var clusters: [MapCluster] = []
+        
+        // Convert restaurant groups to clusters
+        for (restaurantId, restaurantMeals) in restaurantGroups {
+            guard let firstMeal = restaurantMeals.first,
+                  let restaurant = firstMeal.restaurant,
+                  let location = restaurant.location else { 
+                print("⚠️ Skipping group \(restaurantId) - missing restaurant or location")
+                continue 
+            }
+            
+            let coordinate = CLLocationCoordinate2D(
+                latitude: location.latitude,
+                longitude: location.longitude
+            )
+            
+            let cluster = MapCluster(
+                coordinate: coordinate,
+                meals: restaurantMeals,
+                restaurant: restaurant
+            )
+            clusters.append(cluster)
+            
+            print("📍 Created cluster for \(restaurant.name) at (\(location.latitude), \(location.longitude)) with \(restaurantMeals.count) meals")
+        }
+        
+        print("🎯 generateClusters - Created \(clusters.count) base clusters")
+        
+        // For high zoom levels, show individual clusters
+        // For low zoom levels, merge nearby clusters
+        let finalClusters: [MapCluster]
+        if zoomLevel < 12 {
+            finalClusters = mergeClusters(clusters, threshold: 0.01) // ~1km at equator
+            print("🔀 Merged to \(finalClusters.count) clusters (zoom < 12)")
+        } else if zoomLevel < 15 {
+            finalClusters = mergeClusters(clusters, threshold: 0.005) // ~500m at equator
+            print("🔀 Merged to \(finalClusters.count) clusters (zoom < 15)")
+        } else {
+            finalClusters = clusters // Show all individual restaurant clusters
+            print("📌 Using all \(finalClusters.count) individual clusters (zoom >= 15)")
+        }
+        
+        return finalClusters
+    }
+    
+    private func mergeClusters(_ clusters: [MapCluster], threshold: Double) -> [MapCluster] {
+        var mergedClusters: [MapCluster] = []
+        var processedIndices: Set<Int> = []
+        
+        for (index, cluster) in clusters.enumerated() {
+            if processedIndices.contains(index) { continue }
+            
+            var nearbyMeals = cluster.meals
+            var centroidLat = cluster.coordinate.latitude * Double(cluster.count)
+            var centroidLng = cluster.coordinate.longitude * Double(cluster.count)
+            var totalCount = cluster.count
+            
+            processedIndices.insert(index)
+            
+            // Find nearby clusters to merge
+            for (otherIndex, otherCluster) in clusters.enumerated() {
+                if processedIndices.contains(otherIndex) { continue }
+                
+                let distance = sqrt(
+                    pow(cluster.coordinate.latitude - otherCluster.coordinate.latitude, 2) +
+                    pow(cluster.coordinate.longitude - otherCluster.coordinate.longitude, 2)
+                )
+                
+                if distance < threshold {
+                    nearbyMeals.append(contentsOf: otherCluster.meals)
+                    centroidLat += otherCluster.coordinate.latitude * Double(otherCluster.count)
+                    centroidLng += otherCluster.coordinate.longitude * Double(otherCluster.count)
+                    totalCount += otherCluster.count
+                    processedIndices.insert(otherIndex)
+                }
+            }
+            
+            let finalCoordinate = CLLocationCoordinate2D(
+                latitude: centroidLat / Double(totalCount),
+                longitude: centroidLng / Double(totalCount)
+            )
+            
+            let mergedCluster = MapCluster(
+                coordinate: finalCoordinate,
+                meals: nearbyMeals,
+                restaurant: nearbyMeals.count == cluster.meals.count ? cluster.restaurant : nil
+            )
+            
+            mergedClusters.append(mergedCluster)
+        }
+        
+        return mergedClusters
     }
 }
 
@@ -510,6 +711,14 @@ struct ModernGlassBackground: View {
 struct CitizenStyleMapView: UIViewRepresentable {
     let meals: [MealWithDetails]
     let userLocation: CLLocation?
+    @Binding var clusters: [MapCluster]
+    @Binding var currentZoom: Double
+    let onMealTap: (MealWithDetails) -> Void
+    let onClusterTap: (MapCluster) -> Void
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
     
     func makeUIView(context: Context) -> MapView {
         // Get and verify API key
@@ -563,6 +772,12 @@ struct CitizenStyleMapView: UIViewRepresentable {
         
         print("🎮 All gestures enabled for smooth interaction")
         
+        // Add tap gesture for annotations
+        let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleMapTap(_:)))
+        mapView.addGestureRecognizer(tapGesture)
+        
+        // Note: Zoom-based clustering updates will happen via SwiftUI state changes
+        
         return mapView
     }
     
@@ -611,7 +826,100 @@ struct CitizenStyleMapView: UIViewRepresentable {
             print("📍 Location puck enabled")
         }
         
+        // Add clustering annotations
+        updateMapAnnotations(mapView)
+        
         // Note: Camera is only set once in makeUIView, allowing free scrolling
+    }
+    
+    private func updateMapAnnotations(_ mapView: MapView) {
+        print("🗺️ updateMapAnnotations - Updating with \(clusters.count) clusters")
+        
+        // Remove existing point annotations
+        let pointAnnotationManager = mapView.annotations.makePointAnnotationManager()
+        pointAnnotationManager.annotations = []
+        
+        // Create new annotations for clusters
+        var annotations: [PointAnnotation] = []
+        for cluster in clusters {
+            let annotation = createClusterAnnotation(for: cluster)
+            annotations.append(annotation)
+            
+            if let restaurant = cluster.restaurant {
+                print("📌 Adding annotation for \(restaurant.name) at (\(cluster.coordinate.latitude), \(cluster.coordinate.longitude))")
+            }
+        }
+        
+        // Add all annotations at once
+        pointAnnotationManager.annotations = annotations
+        print("✅ Added \(annotations.count) annotations to map")
+    }
+    
+    private func createClusterAnnotation(for cluster: MapCluster) -> PointAnnotation {
+        var annotation = PointAnnotation(coordinate: cluster.coordinate)
+        
+        // Modern clustering design with custom styling
+        if cluster.isCluster {
+            // Multiple meals - modern cluster pin with count
+            annotation.textField = "\\(cluster.count)"
+            annotation.textSize = 14
+            annotation.textColor = StyleColor(.white)
+            annotation.iconColor = StyleColor(.systemOrange)
+            annotation.iconSize = 1.2
+        } else {
+            // Single restaurant meal - sleek pin with restaurant initial
+            if let restaurant = cluster.restaurant {
+                let initial = String(restaurant.name.prefix(1)).uppercased()
+                annotation.textField = initial
+                annotation.textSize = 12
+                annotation.textColor = StyleColor(.white)
+                annotation.iconColor = StyleColor(.systemBlue)
+                annotation.iconSize = 1.0
+            }
+        }
+        
+        // Enhanced visual styling
+        annotation.iconOpacity = 0.9
+        annotation.textOpacity = 1.0
+        
+        return annotation
+    }
+    
+    // MARK: - Coordinator
+    class Coordinator: NSObject {
+        var parent: CitizenStyleMapView
+        
+        init(_ parent: CitizenStyleMapView) {
+            self.parent = parent
+        }
+        
+        @objc func handleMapTap(_ gesture: UITapGestureRecognizer) {
+            let mapView = gesture.view as! MapView
+            let point = gesture.location(in: mapView)
+            
+            // Find the closest cluster to the tap point
+            var closestCluster: MapCluster?
+            var closestDistance: Double = Double.infinity
+            
+            for cluster in parent.clusters {
+                let clusterPoint = mapView.mapboxMap.point(for: cluster.coordinate)
+                let distance = sqrt(pow(point.x - clusterPoint.x, 2) + pow(point.y - clusterPoint.y, 2))
+                
+                if distance < 30 && distance < closestDistance {
+                    closestDistance = distance
+                    closestCluster = cluster
+                }
+            }
+            
+            if let cluster = closestCluster {
+                if cluster.isCluster {
+                    parent.onClusterTap(cluster)
+                } else if let meal = cluster.meals.first {
+                    parent.onMealTap(meal)
+                }
+            }
+        }
+        
     }
 }
 
@@ -622,6 +930,210 @@ extension LocationService {
             DispatchQueue.main.async {
                 // Your existing location permission request code
                 continuation.resume()
+            }
+        }
+    }
+}
+
+// MARK: - Meal Detail Modal
+struct MealDetailModal: View {
+    let meal: MealWithDetails
+    let onRestaurantTap: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 20) {
+                // Hero image or placeholder
+                Rectangle()
+                    .fill(Color.gray.opacity(0.3))
+                    .frame(height: 200)
+                    .cornerRadius(12)
+                    .overlay(
+                        VStack {
+                            Image(systemName: "photo")
+                                .font(.system(size: 40))
+                                .foregroundColor(.gray)
+                            Text("Meal Photo")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                        }
+                    )
+                
+                // Meal Info
+                VStack(alignment: .leading, spacing: 16) {
+                    Text(meal.meal.displayTitle)
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    
+                    if let description = meal.meal.description {
+                        Text(description)
+                            .font(.body)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    // Restaurant Info
+                    if let restaurant = meal.restaurant {
+                        Button(action: onRestaurantTap) {
+                            HStack {
+                                VStack(alignment: .leading) {
+                                    Text("Eaten at")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    Text(restaurant.name)
+                                        .font(.headline)
+                                        .foregroundColor(.orange)
+                                }
+                                Spacer()
+                                Image(systemName: "arrow.right")
+                                    .foregroundColor(.orange)
+                            }
+                            .padding()
+                            .background(Color.orange.opacity(0.1))
+                            .cornerRadius(12)
+                        }
+                    }
+                    
+                    // Meal Stats
+                    HStack(spacing: 20) {
+                        if let rating = meal.meal.rating {
+                            VStack {
+                                Text("Rating")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                HStack {
+                                    ForEach(1...5, id: \.self) { star in
+                                        Image(systemName: star <= rating ? "star.fill" : "star")
+                                            .foregroundColor(.orange)
+                                            .font(.caption)
+                                    }
+                                }
+                            }
+                        }
+                        
+                        if meal.meal.cost != nil {
+                            VStack {
+                                Text("Cost")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text("$\\(meal.meal.cost!, specifier: \"%.2f\")")
+                                    .font(.headline)
+                            }
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                
+                Spacer()
+            }
+            .padding()
+            .navigationTitle("Meal Details")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Restaurant Detail View
+struct RestaurantDetailView: View {
+    let restaurantWithDetails: RestaurantWithDetails
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    // Restaurant Header
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(restaurantWithDetails.restaurant.name)
+                            .font(.title)
+                            .fontWeight(.bold)
+                        
+                        if let address = restaurantWithDetails.restaurant.address {
+                            Text(address)
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        HStack {
+                            if let rating = restaurantWithDetails.restaurant.rating {
+                                HStack {
+                                    Image(systemName: "star.fill")
+                                        .foregroundColor(.orange)
+                                    Text(String(format: "%.1f", rating))
+                                        .fontWeight(.medium)
+                                }
+                            }
+                            
+                            if let priceRange = restaurantWithDetails.restaurant.priceRange {
+                                Text(String(repeating: "$", count: priceRange))
+                                    .foregroundColor(.green)
+                                    .fontWeight(.medium)
+                            }
+                        }
+                    }
+                    
+                    Divider()
+                    
+                    // Meals at this restaurant
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Meals (\\(restaurantWithDetails.meals.count))")
+                            .font(.headline)
+                            .fontWeight(.bold)
+                        
+                        ForEach(restaurantWithDetails.meals, id: \.id) { meal in
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(meal.meal.displayTitle)
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                
+                                if let description = meal.meal.description {
+                                    Text(description)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(2)
+                                }
+                                
+                                HStack {
+                                    Text("By \\(meal.user.display_name ?? meal.user.username)")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    
+                                    Spacer()
+                                    
+                                    if let rating = meal.meal.rating {
+                                        HStack {
+                                            ForEach(1...5, id: \.self) { star in
+                                                Image(systemName: star <= rating ? "star.fill" : "star")
+                                                    .foregroundColor(.orange)
+                                                    .font(.system(size: 10))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            .padding()
+                            .background(Color.gray.opacity(0.1))
+                            .cornerRadius(8)
+                        }
+                    }
+                }
+                .padding()
+            }
+            .navigationTitle("Restaurant")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
             }
         }
     }
