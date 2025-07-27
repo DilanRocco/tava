@@ -22,6 +22,7 @@ struct FeedMealItem: Identifiable {
     let commentsCount: Int
     let bookmarksCount: Int
     let photoUrl: String?
+    let photoStoragePath: String?
     let userHasLiked: Bool
     let userHasBookmarked: Bool
 
@@ -57,6 +58,7 @@ struct FeedMealData: Codable, Identifiable {
     let commentsCount: Int
     let bookmarksCount: Int
     var photoUrl: String?
+    let primaryPhotoFilePath: String?
     let userHasLiked: Bool
     let userHasBookmarked: Bool
     var id: UUID { mealId }
@@ -78,6 +80,7 @@ struct FeedMealData: Codable, Identifiable {
         case commentsCount = "comments_count"
         case bookmarksCount = "bookmarks_count"
         case photoUrl = "photo_url"
+        case primaryPhotoFilePath = "primary_photo_file_path"
         case userHasLiked = "user_has_liked"
         case userHasBookmarked = "user_has_bookmarked"
     }
@@ -101,6 +104,7 @@ struct FeedMealData: Codable, Identifiable {
             commentsCount: commentsCount,
             bookmarksCount: bookmarksCount,
             photoUrl: photoUrl,
+            photoStoragePath: primaryPhotoFilePath,
             userHasLiked: userHasLiked,
             userHasBookmarked: userHasBookmarked
         )

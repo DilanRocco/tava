@@ -45,7 +45,7 @@ struct AddMealView: View {
             switch stage {
             case .courseSelection:
                 if startingImages.count > 0, 
-                   let imageData = startingImages[0].jpegData(compressionQuality: 0.8) {
+                   let imageData = SupabaseClient.shared.compressImage(image: startingImages[0]) {
                     _navigationPath = State(initialValue: {
                         var path = NavigationPath()
                         path.append(NavigationDestination.courseSelection(imageData: imageData))
@@ -63,7 +63,7 @@ struct AddMealView: View {
                 break
             }
         } else if startingImages.count == 1 {
-            if let imageData = startingImages[0].jpegData(compressionQuality: 0.8) {
+            if let imageData = SupabaseClient.shared.compressImage(image: startingImages[0]) {
                 _navigationPath = State(initialValue: {
                     var path = NavigationPath()
                     path.append(NavigationDestination.courseSelection(imageData: imageData))
@@ -208,7 +208,7 @@ struct AddMealView: View {
             currentDraftId = newDraft.meal.id
             
             if let draftId = currentDraftId,
-               let imageData = image.jpegData(compressionQuality: 0.8) {
+               let imageData = SupabaseClient.shared.compressImage(image: image) {
                 let _ = try await draftService.addPhoto(
                     to: draftId,
                     imageData: imageData,
@@ -1198,19 +1198,7 @@ struct FullScreenImageView: View {
     }
 }
 
-// MARK: - Button Styles
-struct PrimaryButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(Color.accentColor)
-            .foregroundColor(.white)
-            .cornerRadius(12)
-            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
-            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
-    }
-}
+
 
 struct SecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {

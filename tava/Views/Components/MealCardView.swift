@@ -3,27 +3,30 @@ import SwiftUI
 struct MealCardView: View {
     let meal: MealWithDetails
     @EnvironmentObject var mealService: MealService
-    @State private var showingDetail = false
     
     var body: some View {
-        Button(action: {
-            showingDetail = true
-        }) {
-            VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 12) {
                 // Header with user info
                 HStack {
                     // User avatar
-                    AsyncImage(url: URL(string: meal.user.avatarUrl ?? "")) { image in
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                    } placeholder: {
+                    if let avatarUrl = meal.user.avatarUrl, !avatarUrl.isEmpty {
+                        AsyncImage(url: URL(string: avatarUrl)) { image in
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                        } placeholder: {
+                            Image(systemName: "person.circle.fill")
+                                .resizable()
+                                .foregroundColor(.gray)
+                        }
+                        .frame(width: 32, height: 32)
+                        .clipShape(Circle())
+                    } else {
                         Image(systemName: "person.circle.fill")
                             .resizable()
                             .foregroundColor(.gray)
+                            .frame(width: 32, height: 32)
                     }
-                    .frame(width: 32, height: 32)
-                    .clipShape(Circle())
                     
                     VStack(alignment: .leading, spacing: 2) {
                         Text(meal.user.displayName ?? meal.user.username)
@@ -45,8 +48,8 @@ struct MealCardView: View {
                 }
                 
                 // Meal photo
-                if let photo = meal.primaryPhoto {
-                    AsyncImage(url: URL(string: photo.url)) { image in
+                if let photo = meal.primaryPhoto, !photo.storagePath.isEmpty {
+                    CachedAsyncImage(storagePath: photo.storagePath) { image in
                         image
                             .resizable()
                             .aspectRatio(contentMode: .fill)
@@ -60,6 +63,22 @@ struct MealCardView: View {
                     .frame(height: 200)
                     .clipped()
                     .clipShape(RoundedRectangle(cornerRadius: 12))
+                } else {
+                    Rectangle()
+                        .fill(Color(.systemGray5))
+                        .frame(height: 200)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .overlay(
+                            Image(systemName: "fork.knife")
+                                .foregroundColor(.gray)
+                        )
+                        .onAppear {
+                            if let photo = meal.primaryPhoto {
+                                print("🖼️ MealCardView - Empty storage path for meal: \(meal.meal.id), photo: \(photo.id), path: '\(photo.storagePath)'")
+                            } else {
+                                print("🖼️ MealCardView - No primary photo for meal: \(meal.meal.id)")
+                            }
+                        }
                 }
                 
                 // Meal info
@@ -155,12 +174,6 @@ struct MealCardView: View {
             .background(Color(.systemBackground))
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
-        }
-        .buttonStyle(PlainButtonStyle())
-        .sheet(isPresented: $showingDetail) {
-            EmptyView()
-//            MealDetailView(meal: meal)
-        }
     }
 }
 

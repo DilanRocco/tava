@@ -38,7 +38,7 @@ struct PhotoUpload {
     var fileName: String {
         let timestamp = Int(Date().timeIntervalSince1970)
         let mealIdentifier = mealId?.uuidString.prefix(8) ?? collaborativeMealId?.uuidString.prefix(8) ?? "unknown"
-        return "meal_\(mealIdentifier)_\(timestamp).jpg"
+        return "meal_\(mealIdentifier)_\(timestamp).webp"
     }
     
     var storagePath: String {

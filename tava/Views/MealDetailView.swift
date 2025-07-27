@@ -1,219 +1,189 @@
-// import SwiftUI
+import SwiftUI
 
-// struct MealDetailView: View {
-//     let meal: MealWithPhotos
-//     let onAddPhoto: () -> Void
-//     let onPhotoCourseChange: (Photo) -> Void
+struct MealDetailView: View {
+    let meal: MealWithDetails
+    @Environment(\.dismiss) private var dismiss
     
-//     @Environment(\.dismiss) private var dismiss
-//     @StateObject private var draftService = DraftMealService()
-//     @State private var showingPublishOptions = false
-//     @State private var showingPublishMeal = false
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Header with user info
+                    headerSection
+                    
+                    // Main meal photo
+                    mainPhotoSection
+                    
+                    // Meal details
+                    mealDetailsSection
+                    
+                    // All photos
+                    if meal.photos.count > 1 {
+                        allPhotosSection
+                    }
+                }
+                .padding()
+            }
+            .navigationTitle("Meal Details")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
     
-//     private var courseGroups: [Course: [Photo]] {
-//             var groups: [Course: [Photo]] = [:]
+    private var headerSection: some View {
+        HStack {
+            if let avatarUrl = meal.user.avatarUrl, !avatarUrl.isEmpty {
+                AsyncImage(url: URL(string: avatarUrl)) { image in
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } placeholder: {
+                    Image(systemName: "person.circle.fill")
+                        .resizable()
+                        .foregroundColor(.gray)
+                }
+                .frame(width: 50, height: 50)
+                .clipShape(Circle())
+            } else {
+                Image(systemName: "person.circle.fill")
+                    .resizable()
+                    .foregroundColor(.gray)
+                    .frame(width: 50, height: 50)
+            }
             
-//             for photo in meal.photos {
-//                 if let course = photo.course {
-//                     if groups[course] == nil {
-//                         groups[course] = []
-//                     }
-//                     groups[course]!.append(photo)
-//                 }
-//             }
-            
-//             return groups
-//         }
-    
-//     private var uncategorizedPhotos: [Photo] {
-//         meal.photos.filter { $0.course == nil }
-//     }
-    
-//     var body: some View {
-//         NavigationView {
-//             ScrollView {
-//                 VStack(spacing: 20) {
-//                     // Publish Options
-//                     publishSection
-                    
-//                     Divider()
-                    
-//                     // Photos by Course
-//                     if !courseGroups.isEmpty {
-//                         courseSections
-//                     }
-                    
-//                     // Uncategorized Photos
-//                     if !uncategorizedPhotos.isEmpty {
-//                         uncategorizedSection
-//                     }
-                    
-//                     // Add Photo Button
-//                     addPhotoSection
-//                 }
-//                 .padding()
-//             }
-//             .navigationTitle("Meal Photos")
-//             .navigationBarTitleDisplayMode(.inline)
-//             .toolbar {
-//                 ToolbarItem(placement: .topBarTrailing) {
-//                     Button("Done") {
-//                         dismiss()
-//                     }
-//                 }
-//             }
-//         }
-//         .sheet(isPresented: $showingPublishMeal) {
-//             PublishMealView(meal: meal) { title, description, privacy in
-//                 Task {
-//                     await publishEntireMeal(title: title, description: description, privacy: privacy)
-//                 }
-//             }
-//         }
-//         .actionSheet(isPresented: $showingPublishOptions) {
-//             ActionSheet(
-//                 title: Text("Publish Options"),
-//                 message: Text("How would you like to publish this meal?"),
-//                 buttons: [
-//                     .default(Text("Publish Entire Meal")) {
-//                         showingPublishMeal = true
-//                     },
-//                     .default(Text("Publish Individual Courses")) {
-//                         // Individual course publishing is handled in course sections
-//                     },
-//                     .cancel()
-//                 ]
-//             )
-//         }
-//     }
-    
-//     private var publishSection: some View {
-//         VStack(spacing: 12) {
-//             HStack {
-//                 Text("Ready to Share?")
-//                     .font(.headline)
-//                 Spacer()
-//             }
-            
-//             Button(action: { showingPublishOptions = true }) {
-//                 HStack {
-//                     Image(systemName: "paperplane.fill")
-//                     Text("Publish Meal")
-//                 }
-//                 .frame(maxWidth: .infinity)
-//                 .padding()
-//                 .background(Color.green)
-//                 .foregroundColor(.white)
-//                 .rounded()
-//             }
-//             .disabled(meal.photos.isEmpty)
-//         }
-//     }
-    
-//     private var courseSections: some View {
-//         ForEach(courseGroups.keys.sorted(by: { $0.displayName < $1.displayName }), id: \.self) { course in
-//             VStack(alignment: .leading, spacing: 12) {
-//                 HStack {
-//                     HStack(spacing: 8) {
-//                         Text(course.emoji)
-//                         Text(course.displayName)
-//                             .font(.headline)
-//                     }
-                    
-//                     Spacer()
-                    
-//                     Button("Publish \(course.displayName)") {
-//                         Task {
-//                             await publishCourse(course)
-//                         }
-//                     }
-//                     .font(.caption)
-//                     .padding(.horizontal, 12)
-//                     .padding(.vertical, 6)
-//                     .background(Color.accentColor.opacity(0.1))
-//                     .foregroundColor(.accentColor)
-//                     .rounded()
-//                 }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(meal.user.displayName ?? meal.user.username)
+                    .font(.headline)
+                    .fontWeight(.semibold)
                 
-//                 LazyVGrid(columns: [
-//                     GridItem(.flexible()),
-//                     GridItem(.flexible()),
-//                     GridItem(.flexible())
-//                 ], spacing: 12) {
-//                     ForEach(courseGroups[course] ?? []) { photo in
-//                         PhotoCard(
-//                             photo: photo,
-//                             onCourseTap: { onPhotoCourseChange(photo) }
-//                         )
-//                     }
-//                 }
-//             }
-//         }
-//     }
-    
-//     private var uncategorizedSection: some View {
-//         VStack(alignment: .leading, spacing: 12) {
-//             HStack {
-//                 Text("🍴 Uncategorized")
-//                     .font(.headline)
-//                 Spacer()
-//             }
+                Text(meal.meal.eatenAt.timeAgoDisplay)
+                    .font(.caption)
+                    .foregroundColor(.gray)
+            }
             
-//             LazyVGrid(columns: [
-//                 GridItem(.flexible()),
-//                 GridItem(.flexible()),
-//                 GridItem(.flexible())
-//             ], spacing: 12) {
-//                 ForEach(uncategorizedPhotos) { photo in
-//                     PhotoCard(
-//                         photo: photo,
-//                         onCourseTap: { onPhotoCourseChange(photo) }
-//                     )
-//                 }
-//             }
-//         }
-//     }
+            Spacer()
+        }
+    }
     
-//     private var addPhotoSection: some View {
-//         Button(action: onAddPhoto) {
-//             VStack {
-//                 Image(systemName: "plus")
-//                     .font(.title2)
-//                     .foregroundColor(.secondary)
-//                 Text("Add Photo")
-//                     .font(.caption)
-//                     .foregroundColor(.secondary)
-//             }
-//             .frame(maxWidth: .infinity, minHeight: 60)
-//             .background(Color.secondary.opacity(0.1))
-//             .rounded(12)
-//         }
-//     }
+    private var mainPhotoSection: some View {
+        Group {
+            if let photo = meal.primaryPhoto, !photo.storagePath.isEmpty {
+                CachedAsyncImage(storagePath: photo.storagePath) { image in
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                } placeholder: {
+                    Rectangle()
+                        .fill(Color(.systemGray5))
+                        .overlay(
+                            ProgressView()
+                        )
+                }
+                .frame(maxHeight: 400)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+        }
+    }
     
-//     // MARK: - Publishing Actions
+    private var mealDetailsSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(meal.meal.displayTitle)
+                .font(.title2)
+                .fontWeight(.bold)
+            
+            if let description = meal.meal.description {
+                Text(description)
+                    .font(.body)
+                    .foregroundColor(.secondary)
+            }
+            
+            if let restaurant = meal.restaurant {
+                HStack {
+                    Image(systemName: "location.fill")
+                        .foregroundColor(.orange)
+                    Text(restaurant.name)
+                        .font(.subheadline)
+                }
+            }
+            
+            if let rating = meal.meal.rating {
+                HStack {
+                    Text("Rating:")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    
+                    HStack(spacing: 2) {
+                        ForEach(1...5, id: \.self) { star in
+                            Image(systemName: star <= rating ? "star.fill" : "star")
+                                .foregroundColor(star <= rating ? .yellow : .gray)
+                                .font(.caption)
+                        }
+                    }
+                }
+            }
+            
+            if !meal.meal.tags.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(meal.meal.tags, id: \.self) { tag in
+                            Text("#\(tag)")
+                                .font(.caption)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.orange.opacity(0.1))
+                                .foregroundColor(.orange)
+                                .clipShape(Capsule())
+                        }
+                    }
+                    .padding(.horizontal, 2)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
     
-//     private func publishCourse(_ course: Course) async {
-//         do {
-//             try await draftService.publishCourse(mealId: meal.meal.id, course: course)
-//             dismiss()
-//         } catch {
-//             // Handle error
-//             print("Failed to publish course: \(error)")
-//         }
-//     }
-    
-//     private func publishEntireMeal(title: String?, description: String?, privacy: MealPrivacy) async {
-//         do {
-//             try await draftService.publishEntireMeal(
-//                 mealId: meal.meal.id,
-//                 title: title,
-//                 description: description,
-//                 privacy: privacy
-//             )
-//             dismiss()
-//         } catch {
-//             // Handle error
-//             print("Failed to publish meal: \(error)")
-//         }
-//     }
-// }
+    private var allPhotosSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("All Photos")
+                .font(.headline)
+                .fontWeight(.semibold)
+            
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
+                ForEach(meal.photos) { photo in
+                    if !photo.storagePath.isEmpty {
+                        CachedAsyncImage(storagePath: photo.storagePath) { image in
+                            image
+                                .resizable()
+                                .aspectRatio(1, contentMode: .fill)
+                        } placeholder: {
+                            Rectangle()
+                                .fill(Color(.systemGray5))
+                                .overlay(
+                                    ProgressView()
+                                        .scaleEffect(0.5)
+                                )
+                        }
+                        .frame(height: 100)
+                        .clipped()
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    } else {
+                        Rectangle()
+                            .fill(Color(.systemGray5))
+                            .frame(height: 100)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .overlay(
+                                Image(systemName: "photo")
+                                    .foregroundColor(.gray)
+                            )
+                    }
+                }
+            }
+        }
+    }
+}

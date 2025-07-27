@@ -1,13 +1,15 @@
 import SwiftUI
 import CoreLocation
+import MessageUI
 
-  enum DiscoveryCategory: String, CaseIterable {
-        case all = "All"
-        case people = "People"
-        case restaurants = "Restaurants"
-        case meals = "Meals"
-        case trending = "Trending"
-    }
+enum DiscoveryCategory: String, CaseIterable {
+    case all = "All"
+    case people = "People"
+    case restaurants = "Restaurants"
+    case meals = "Meals"
+    case trending = "Trending"
+    case contacts = "Contacts"
+}
     
 struct DiscoveryView: View {
     @EnvironmentObject var supabase: SupabaseClient
@@ -16,15 +18,18 @@ struct DiscoveryView: View {
     @EnvironmentObject var googlePlacesService: GooglePlacesService
     
     @StateObject private var discoveryService: HybridDiscoveryFeedService
+    @StateObject private var contactService: ContactService
     
     @State private var searchText = ""
     @State private var selectedCategory: DiscoveryCategory = .all
     @State private var showingProfile = false
-    
-  
+    @State private var showingContactsSheet = false
+    @State private var showingMessageComposer = false
+    @State private var selectedContactForInvite: Contact?
     
     init() {
         self._discoveryService = StateObject(wrappedValue: HybridDiscoveryFeedService(supabase: SupabaseClient.shared))
+        self._contactService = StateObject(wrappedValue: ContactService(supabase: SupabaseClient.shared))
     }
     
     var body: some View {
@@ -47,10 +52,29 @@ struct DiscoveryView: View {
         }
         .preferredColorScheme(.dark)
         .sheet(isPresented: $showingProfile) {
-            ProfileView()
-                .environmentObject(supabase)
-                .environmentObject(locationService)
-                .environmentObject(mealService)
+            NavigationView {
+                ProfileView()
+                    .environmentObject(supabase)
+                    .environmentObject(locationService)
+                    .environmentObject(mealService)
+            }
+        }
+        .sheet(isPresented: $showingContactsSheet) {
+            ContactsSheet()
+                .environmentObject(contactService)
+        }
+        .sheet(isPresented: $showingMessageComposer) {
+            if let contact = selectedContactForInvite {
+                MessageComposerView(contact: contact) { success in
+                    if success {
+                        Task {
+                            await contactService.sendInvite(to: contact)
+                        }
+                    }
+                    showingMessageComposer = false
+                    selectedContactForInvite = nil
+                }
+            }
         }
         .task {
             await initializeData()
@@ -70,34 +94,47 @@ struct DiscoveryView: View {
     }
     
     private var headerView: some View {
-        HStack {
-            Button(action: {
-                showingProfile = true
-            }) {
-                Circle()
-                    .fill(Color.gray.opacity(0.3))
-                    .frame(width: 40, height: 40)
-                    .overlay(
-                        Image(systemName: "person.fill")
-                            .foregroundColor(.white)
-                    )
+        VStack(spacing: 16) {
+            HStack {
+                Button(action: {
+                    showingProfile = true
+                }) {
+                    Circle()
+                        .fill(Color.gray.opacity(0.3))
+                        .frame(width: 40, height: 40)
+                        .overlay(
+                            Image(systemName: "person.fill")
+                                .foregroundColor(.white)
+                        )
+                }
+                
+                Spacer()
+                
+                VStack(spacing: 4) {
+                    Text("Tava")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.orange)
+                    
+                    Text("Discover • Connect • Share")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                }
+                
+                Spacer()
+                
+                Button(action: {
+                    showingContactsSheet = true
+                }) {
+                    Image(systemName: "person.2.badge.plus")
+                        .font(.title3)
+                        .foregroundColor(.orange)
+                }
             }
             
-            Spacer()
-            
-            Text("Discovery")
-                .font(.title2)
-                .fontWeight(.bold)
-                .foregroundColor(.white)
-            
-            Spacer()
-            
-            Button(action: {
-                // Notifications action
-            }) {
-                Image(systemName: "bell")
-                    .font(.title3)
-                    .foregroundColor(.white)
+            // Contact sync banner if contacts not loaded
+            if contactService.contactsPermissionStatus != .authorized && !contactService.contacts.isEmpty == false {
+                contactSyncBanner
             }
         }
         .padding(.horizontal, 20)
@@ -142,15 +179,28 @@ struct DiscoveryView: View {
     
     private var contentView: some View {
         ScrollView {
-            if !searchText.isEmpty && !discoveryService.searchResults.isEmpty {
+            if !searchText.isEmpty {
                 // Search Results
-                LazyVStack(spacing: 16) {
-                    ForEach(discoveryService.searchResults) { item in
-                        searchResultCard(for: item)
+                if discoveryService.searchLoading {
+                    LoadingView()
+                        .padding(.top, 40)
+                } else if discoveryService.searchResults.isEmpty {
+                    EmptyStateView(
+                        icon: "magnifyingglass",
+                        title: "No Results Found",
+                        subtitle: "Try adjusting your search terms or browse by category"
+                    )
+                    .foregroundColor(.white)
+                    .padding(.top, 40)
+                } else {
+                    LazyVStack(spacing: 16) {
+                        ForEach(discoveryService.searchResults) { item in
+                            searchResultCard(for: item)
+                        }
                     }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 20)
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 20)
             } else {
                 // Regular content based on category
                 LazyVStack(spacing: 16) {
@@ -165,71 +215,88 @@ struct DiscoveryView: View {
                         mealsContentView
                     case .trending:
                         trendingContentView
+                    case .contacts:
+                        contactsContentView
                     }
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 20)
             }
         }
+        .refreshable {
+            await discoveryService.refreshCurrentCategory(selectedCategory)
+        }
     }
     
     private var allContentView: some View {
-        VStack(spacing: 20) {
-            // Trending Section
-            SectionHeader(title: "Trending Now", action: {
-                selectedCategory = .trending
-            })
-            
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(discoveryService.trendingMeals.prefix(5)) { meal in
-                        TrendingCard(meal: meal)
-                    }
-                    // Fallback placeholders if no data
-                    if discoveryService.trendingMeals.isEmpty {
-                        ForEach(0..<5) { index in
-                            TrendingCard(index: index)
+        VStack(spacing: 24) {
+            if discoveryService.mainFeedLoading {
+                LoadingView()
+                    .padding(.top, 40)
+            } else {
+                // Trending Section
+                if !discoveryService.trendingMeals.isEmpty {
+                    VStack(spacing: 16) {
+                        SectionHeader(title: "Trending Now", action: {
+                            selectedCategory = .trending
+                        })
+                        
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 12) {
+                                ForEach(discoveryService.trendingMeals.prefix(5)) { meal in
+                                    TrendingCard(meal: meal)
+                                }
+                            }
+                            .padding(.horizontal, 20)
                         }
                     }
                 }
-                .padding(.horizontal, 20)
-            }
-            
-            // Discover People Section
-            SectionHeader(title: "Discover People", action: {
-                selectedCategory = .people
-            })
-            
-            VStack(spacing: 12) {
-                ForEach(discoveryService.trendingPeople.prefix(3)) { person in
-                    PersonCard(person: person) {
-                        Task {
-                            await discoveryService.toggleFollow(for: person)
+                
+                // Discover People Section
+                if !discoveryService.trendingPeople.isEmpty {
+                    VStack(spacing: 16) {
+                        SectionHeader(title: "Discover People", action: {
+                            selectedCategory = .people
+                        })
+                        
+                        VStack(spacing: 12) {
+                            ForEach(discoveryService.trendingPeople.prefix(3)) { person in
+                                PersonCard(person: person) {
+                                    Task {
+                                        await discoveryService.toggleFollow(for: person)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
-                // Fallback placeholders if no data
-                if discoveryService.trendingPeople.isEmpty {
-                    ForEach(0..<3) { index in
-                        PersonCard(index: index)
+                
+                // Popular Restaurants Section
+                if !discoveryService.popularRestaurants.isEmpty {
+                    VStack(spacing: 16) {
+                        SectionHeader(title: "Popular Restaurants", action: {
+                            selectedCategory = .restaurants
+                        })
+                        
+                        VStack(spacing: 12) {
+                            ForEach(discoveryService.popularRestaurants.prefix(3)) { restaurant in
+                                RestaurantCard(restaurant: restaurant)
+                            }
+                        }
                     }
                 }
-            }
-            
-            // Popular Restaurants Section
-            SectionHeader(title: "Popular Restaurants", action: {
-                selectedCategory = .restaurants
-            })
-            
-            VStack(spacing: 12) {
-                ForEach(discoveryService.popularRestaurants.prefix(3)) { restaurant in
-                    RestaurantCard(restaurant: restaurant)
-                }
-                // Fallback placeholders if no data
-                if discoveryService.popularRestaurants.isEmpty {
-                    ForEach(0..<3) { index in
-                        RestaurantCard(index: index)
-                    }
+                
+                // Show empty state if no content
+                if discoveryService.trendingMeals.isEmpty && 
+                   discoveryService.trendingPeople.isEmpty && 
+                   discoveryService.popularRestaurants.isEmpty {
+                    EmptyStateView(
+                        icon: "globe.americas",
+                        title: "Welcome to Tava!",
+                        subtitle: "Start by exploring restaurants, connecting with friends, or sharing your first meal"
+                    )
+                    .foregroundColor(.white)
+                    .padding(.top, 40)
                 }
             }
         }
@@ -237,17 +304,23 @@ struct DiscoveryView: View {
     
     private var peopleContentView: some View {
         LazyVStack(spacing: 12) {
-            ForEach(discoveryService.trendingPeople) { person in
-                PersonCard(person: person) {
-                    Task {
-                        await discoveryService.toggleFollow(for: person)
+            if discoveryService.peopleLoading {
+                LoadingView()
+                    .padding(.top, 40)
+            } else if discoveryService.trendingPeople.isEmpty {
+                EmptyStateView(
+                    icon: "person.2",
+                    title: "No People Found",
+                    subtitle: "Invite friends to join you on Tava and discover great meals together!"
+                )
+                .foregroundColor(.white)
+            } else {
+                ForEach(discoveryService.trendingPeople) { person in
+                    PersonCard(person: person) {
+                        Task {
+                            await discoveryService.toggleFollow(for: person)
+                        }
                     }
-                }
-            }
-            // Fallback placeholders if no data
-            if discoveryService.trendingPeople.isEmpty {
-                ForEach(0..<10) { index in
-                    PersonCard(index: index)
                 }
             }
         }
@@ -255,27 +328,41 @@ struct DiscoveryView: View {
     
     private var restaurantsContentView: some View {
         LazyVStack(spacing: 12) {
-            ForEach(discoveryService.popularRestaurants) { restaurant in
-                RestaurantCard(restaurant: restaurant)
-            }
-            // Fallback placeholders if no data
-            if discoveryService.popularRestaurants.isEmpty {
-                ForEach(0..<10) { index in
-                    RestaurantCard(index: index)
+            if discoveryService.restaurantsLoading {
+                LoadingView()
+                    .padding(.top, 40)
+            } else if discoveryService.popularRestaurants.isEmpty {
+                EmptyStateView(
+                    icon: "fork.knife",
+                    title: "No Restaurants Found",
+                    subtitle: "We're still finding great restaurants near you. Check back soon!"
+                )
+                .foregroundColor(.white)
+            } else {
+                ForEach(discoveryService.popularRestaurants) { restaurant in
+                    RestaurantCard(restaurant: restaurant)
                 }
             }
         }
     }
     
     private var mealsContentView: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 2), spacing: 8) {
-            ForEach(discoveryService.trendingMeals) { meal in
-                MealDiscoveryCard(meal: meal)
-            }
-            // Fallback placeholders if no data
-            if discoveryService.trendingMeals.isEmpty {
-                ForEach(0..<20) { index in
-                    MealDiscoveryCard(index: index)
+        Group {
+            if discoveryService.mealsLoading {
+                LoadingView()
+                    .padding(.top, 40)
+            } else if discoveryService.trendingMeals.isEmpty {
+                EmptyStateView(
+                    icon: "photo.on.rectangle",
+                    title: "No Meals Yet",
+                    subtitle: "Start exploring and sharing your favorite meals!"
+                )
+                .foregroundColor(.white)
+            } else {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 2), spacing: 8) {
+                    ForEach(discoveryService.trendingMeals) { meal in
+                        MealDiscoveryCard(meal: meal)
+                    }
                 }
             }
         }
@@ -283,14 +370,181 @@ struct DiscoveryView: View {
     
     private var trendingContentView: some View {
         LazyVStack(spacing: 12) {
-            ForEach(discoveryService.trendingMeals) { meal in
-                TrendingCard(meal: meal)
-            }
-            // Fallback placeholders if no data
-            if discoveryService.trendingMeals.isEmpty {
-                ForEach(0..<10) { index in
-                    TrendingCard(index: index)
+            if discoveryService.mealsLoading {
+                LoadingView()
+                    .padding(.top, 40)
+            } else if discoveryService.trendingMeals.isEmpty {
+                EmptyStateView(
+                    icon: "flame",
+                    title: "Nothing Trending Yet",
+                    subtitle: "Be the first to share amazing meals and start the trend!"
+                )
+                .foregroundColor(.white)
+            } else {
+                ForEach(discoveryService.trendingMeals) { meal in
+                    TrendingCard(meal: meal)
                 }
+            }
+        }
+    }
+    
+    private var contactSyncBanner: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "person.2.badge.plus")
+                .font(.title2)
+                .foregroundColor(.orange)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Find Friends on Tava")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                
+                Text("Connect with friends and discover new meals together")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+            }
+            
+            Spacer()
+            
+            Button("Sync") {
+                Task {
+                    let granted = await contactService.requestContactsPermission()
+                    if granted {
+                        await contactService.loadContacts()
+                    }
+                }
+            }
+            .font(.subheadline)
+            .fontWeight(.medium)
+            .foregroundColor(.white)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(Color.orange)
+            .cornerRadius(20)
+        }
+        .padding()
+        .background(Color(.systemGray6).opacity(0.1))
+        .cornerRadius(12)
+    }
+    
+    private var contactsContentView: some View {
+        LazyVStack(spacing: 16) {
+            if contactService.contactsPermissionStatus != .authorized {
+                contactPermissionView
+            } else if contactService.isLoadingContacts {
+                LoadingView()
+            } else {
+                contactsListView
+            }
+        }
+    }
+    
+    private var contactPermissionView: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "person.2.badge.plus")
+                .font(.system(size: 50))
+                .foregroundColor(.orange)
+            
+            VStack(spacing: 8) {
+                Text("Find Friends on Tava")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+                
+                Text("Connect your contacts to find friends who are already on Tava and invite those who aren't")
+                    .font(.body)
+                    .foregroundColor(.gray)
+                    .multilineTextAlignment(.center)
+            }
+            
+            Button("Connect Contacts") {
+                Task {
+                    let granted = await contactService.requestContactsPermission()
+                    if granted {
+                        await contactService.loadContacts()
+                    }
+                }
+            }
+            .font(.headline)
+            .fontWeight(.semibold)
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background(Color.orange)
+            .cornerRadius(12)
+        }
+        .padding(.horizontal, 40)
+        .padding(.vertical, 60)
+    }
+    
+    private var contactsListView: some View {
+        VStack(spacing: 20) {
+            // Friends on Tava section
+            if !contactService.contactsOnApp().isEmpty {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("Friends on Tava")
+                            .font(.headline)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                        
+                        Spacer()
+                        
+                        Text("\(contactService.contactsOnApp().count)")
+                            .font(.subheadline)
+                            .foregroundColor(.orange)
+                    }
+                    
+                    ForEach(contactService.contactsOnApp()) { contact in
+                        ContactCard(contact: contact, isOnApp: true) {
+                            if let userId = contact.userId {
+                                Task {
+                                    await contactService.sendFriendRequest(to: userId)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Invite friends section
+            if !contactService.contactsNotOnApp().isEmpty {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("Invite to Tava")
+                            .font(.headline)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                        
+                        Spacer()
+                        
+                        Text("\(contactService.contactsNotOnApp().count)")
+                            .font(.subheadline)
+                            .foregroundColor(.orange)
+                    }
+                    
+                    ForEach(contactService.contactsNotOnApp().prefix(10)) { contact in
+                        ContactCard(contact: contact, isOnApp: false) {
+                            selectedContactForInvite = contact
+                            showingMessageComposer = true
+                        }
+                    }
+                    
+                    if contactService.contactsNotOnApp().count > 10 {
+                        Button("Show All (\(contactService.contactsNotOnApp().count))") {
+                            // Show all contacts
+                        }
+                        .font(.subheadline)
+                        .foregroundColor(.orange)
+                    }
+                }
+            }
+            
+            if contactService.contacts.isEmpty {
+                Text("No contacts found")
+                    .font(.body)
+                    .foregroundColor(.gray)
+                    .padding(.vertical, 40)
             }
         }
     }
@@ -300,17 +554,21 @@ struct DiscoveryView: View {
     private func initializeData() async {
         await discoveryService.loadMainDiscoveryFeed(refresh: true)
         
-        async let peopleTask = discoveryService.loadTrendingPeople(refresh: true)
-        async let restaurantsTask = discoveryService.loadPopularRestaurants(
-            refresh: true,
-            loadMore: false,
-            location: locationService.location?.coordinate
-        )
-        async let mealsTask = discoveryService.loadTrendingMeals(refresh: true)
-        
-        await peopleTask
-        await restaurantsTask
-        await mealsTask
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask {
+                await discoveryService.loadTrendingPeople(refresh: true)
+            }
+            group.addTask {
+                await discoveryService.loadPopularRestaurants(
+                    refresh: true,
+                    loadMore: false,
+                    location: locationService.location?.coordinate
+                )
+            }
+            group.addTask {
+                await discoveryService.loadTrendingMeals(refresh: true)
+            }
+        }
     }
     
     private func loadCategoryData() async {
@@ -327,6 +585,10 @@ struct DiscoveryView: View {
             )
         case .meals, .trending:
             await discoveryService.loadTrendingMeals(refresh: true)
+        case .contacts:
+            if contactService.contactsPermissionStatus == .authorized {
+                await contactService.loadContacts()
+            }
         }
     }
     
@@ -473,8 +735,7 @@ struct SectionHeader: View {
 }
 
 struct PersonCard: View {
-    var index: Int? = nil
-    var person: DiscoveryPerson? = nil
+    var person: DiscoveryPerson
     var onFollow: (() -> Void)? = nil
     
     var body: some View {
@@ -484,7 +745,7 @@ struct PersonCard: View {
                 .frame(width: 50, height: 50)
                 .overlay(
                     Group {
-                        if let person = person, let avatarUrl = person.avatarUrl {
+                        if let avatarUrl = person.avatarUrl {
                             AsyncImage(url: URL(string: avatarUrl)) { image in
                                 image
                                     .resizable()
@@ -495,16 +756,14 @@ struct PersonCard: View {
                             }
                             .clipShape(Circle())
                         } else {
-                            Text("\(index != nil ? index! + 1 : 1)")
-                                .font(.headline)
-                                .fontWeight(.bold)
+                            Image(systemName: "person.fill")
                                 .foregroundColor(.white)
                         }
                     }
                 )
             
             VStack(alignment: .leading, spacing: 4) {
-                Text(person?.username ?? "User \(index != nil ? index! + 1 : 1)")
+                Text(person.username)
                     .font(.headline)
                     .foregroundColor(.white)
                 
@@ -518,13 +777,13 @@ struct PersonCard: View {
             Button(action: {
                 onFollow?()
             }) {
-                Text(person?.isFollowing == true ? "Following" : "Follow")
+                Text(person.isFollowing ? "Following" : "Follow")
                     .font(.subheadline)
                     .fontWeight(.medium)
                     .foregroundColor(.white)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 6)
-                    .background(person?.isFollowing == true ? Color.gray : Color.orange)
+                    .background(person.isFollowing ? Color.gray : Color.orange)
                     .cornerRadius(20)
             }
         }
@@ -534,25 +793,21 @@ struct PersonCard: View {
     }
     
     private func buildPersonSubtitle() -> String {
-        if let person = person {
-            var parts: [String] = []
-            if let bio = person.bio {
-                parts.append(bio)
-            } else {
-                parts.append("Food enthusiast")
-            }
-            if person.mutualFriendsCount > 0 {
-                parts.append("\(person.mutualFriendsCount) mutual friends")
-            }
-            return parts.joined(separator: " • ")
+        var parts: [String] = []
+        if let bio = person.bio {
+            parts.append(bio)
+        } else {
+            parts.append("Food enthusiast")
         }
-        return "Food enthusiast • \(Int.random(in: 10...100)) mutual friends"
+        if person.mutualFriendsCount > 0 {
+            parts.append("\(person.mutualFriendsCount) mutual friends")
+        }
+        return parts.joined(separator: " • ")
     }
 }
 
 struct RestaurantCard: View {
-    var index: Int? = nil
-    var restaurant: DiscoveryRestaurant? = nil
+    var restaurant: DiscoveryRestaurant
     
     var body: some View {
         HStack(spacing: 12) {
@@ -561,7 +816,7 @@ struct RestaurantCard: View {
                 .frame(width: 60, height: 60)
                 .overlay(
                     Group {
-                        if let restaurant = restaurant, let imageUrl = restaurant.imageUrl {
+                        if let imageUrl = restaurant.imageUrl {
                             AsyncImage(url: URL(string: imageUrl)) { image in
                                 image
                                     .resizable()
@@ -581,7 +836,7 @@ struct RestaurantCard: View {
                 )
             
             VStack(alignment: .leading, spacing: 4) {
-                Text(restaurant?.name ?? "Restaurant \(index != nil ? index! + 1 : 1)")
+                Text(restaurant.name)
                     .font(.headline)
                     .foregroundColor(.white)
                 
@@ -598,38 +853,28 @@ struct RestaurantCard: View {
     }
     
     private func buildRestaurantSubtitle() -> String {
-        if let restaurant = restaurant {
-            var parts: [String] = []
-            
-            if !restaurant.categories.isEmpty {
-                parts.append(restaurant.categories.first!)
-            } else {
-                parts.append("Italian")
-            }
-            
-            parts.append(String(repeating: "$", count: restaurant.priceRange))
-            
-            if let rating = restaurant.rating {
-                parts.append("\(rating)⭐")
-            } else {
-                parts.append("4.5⭐")
-            }
-            
-            if let distance = restaurant.distance {
-                parts.append("\(String(format: "%.1f", distance)) mi away")
-            } else {
-                parts.append("0.5 mi away")
-            }
-            
-            return parts.joined(separator: " • ")
+        var parts: [String] = []
+        
+        if !restaurant.categories.isEmpty {
+            parts.append(restaurant.categories.first!)
         }
-        return "Italian • $$ • 4.5⭐ • 0.5 mi away"
+        
+        parts.append(String(repeating: "$", count: restaurant.priceRange))
+        
+        if let rating = restaurant.rating {
+            parts.append("\(String(format: "%.1f", rating))⭐")
+        }
+        
+        if let distance = restaurant.distance {
+            parts.append("\(String(format: "%.1f", distance)) mi away")
+        }
+        
+        return parts.joined(separator: " • ")
     }
 }
 
 struct TrendingCard: View {
-    var index: Int? = nil
-    var meal: DiscoveryMeal? = nil
+    var meal: DiscoveryMeal
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -638,7 +883,7 @@ struct TrendingCard: View {
                 .frame(width: 140, height: 140)
                 .overlay(
                     Group {
-                        if let meal = meal, let imageUrl = meal.imageUrl {
+                        if let imageUrl = meal.imageUrl {
                             AsyncImage(url: URL(string: imageUrl)) { image in
                                 image
                                     .resizable()
@@ -657,13 +902,13 @@ struct TrendingCard: View {
                     }
                 )
             
-            Text(meal?.title ?? "Trending Meal \(index != nil ? index! + 1 : 1)")
+            Text(meal.title)
                 .font(.subheadline)
                 .fontWeight(.medium)
                 .foregroundColor(.white)
                 .lineLimit(2)
             
-            Text("\(meal?.likesCount ?? Int.random(in: 100...1000)) likes")
+            Text("\(meal.likesCount) likes")
                 .font(.caption)
                 .foregroundColor(.gray)
         }
@@ -672,8 +917,7 @@ struct TrendingCard: View {
 }
 
 struct MealDiscoveryCard: View {
-    var index: Int? = nil
-    var meal: DiscoveryMeal? = nil
+    var meal: DiscoveryMeal
     
     var body: some View {
         VStack(spacing: 8) {
@@ -682,7 +926,7 @@ struct MealDiscoveryCard: View {
                 .aspectRatio(1, contentMode: .fit)
                 .overlay(
                     Group {
-                        if let meal = meal, let imageUrl = meal.imageUrl {
+                        if let imageUrl = meal.imageUrl {
                             AsyncImage(url: URL(string: imageUrl)) { image in
                                 image
                                     .resizable()
@@ -701,11 +945,233 @@ struct MealDiscoveryCard: View {
                     }
                 )
             
-            Text(meal?.title ?? "Meal \(index != nil ? index! + 1 : 1)")
+            Text(meal.title)
                 .font(.caption)
                 .fontWeight(.medium)
                 .foregroundColor(.white)
+                .lineLimit(2)
         }
+    }
+}
+
+// MARK: - Contact Components
+
+struct ContactCard: View {
+    let contact: Contact
+    let isOnApp: Bool
+    let action: () -> Void
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            Circle()
+                .fill(isOnApp ? Color.orange.opacity(0.7) : Color.gray.opacity(0.3))
+                .frame(width: 50, height: 50)
+                .overlay(
+                    Text(String(contact.displayName.prefix(1).uppercased()))
+                        .font(.headline)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                )
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(contact.displayName)
+                    .font(.headline)
+                    .foregroundColor(.white)
+                
+                if let phone = contact.phoneNumber {
+                    Text(phone)
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                } else if let email = contact.email {
+                    Text(email)
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                }
+            }
+            
+            Spacer()
+            
+            Button(action: action) {
+                Text(isOnApp ? "Add Friend" : "Invite")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
+                    .background(isOnApp ? Color.orange : Color.blue)
+                    .cornerRadius(20)
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6).opacity(0.1))
+        .cornerRadius(12)
+    }
+}
+
+struct ContactsSheet: View {
+    @EnvironmentObject var contactService: ContactService
+    @Environment(\.dismiss) var dismiss
+    
+    var body: some View {
+        NavigationView {
+            VStack {
+                if contactService.contactsPermissionStatus != .authorized {
+                    VStack(spacing: 20) {
+                        Image(systemName: "person.2.badge.plus")
+                            .font(.system(size: 50))
+                            .foregroundColor(.orange)
+                        
+                        Text("Connect your contacts to find friends on Tava")
+                            .font(.headline)
+                            .multilineTextAlignment(.center)
+                        
+                        Button("Allow Access") {
+                            Task {
+                                let granted = await contactService.requestContactsPermission()
+                                if granted {
+                                    await contactService.loadContacts()
+                                }
+                            }
+                        }
+                        .buttonStyle(PrimaryButtonStyle())
+                    }
+                    .padding()
+                } else {
+                    List {
+                        Section("Friends on Tava (\(contactService.contactsOnApp().count))") {
+                            ForEach(contactService.contactsOnApp()) { contact in
+                                ContactRow(contact: contact, isOnApp: true)
+                            }
+                        }
+                        
+                        Section("Invite to Tava (\(contactService.contactsNotOnApp().count))") {
+                            ForEach(contactService.contactsNotOnApp()) { contact in
+                                ContactRow(contact: contact, isOnApp: false)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Contacts")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct ContactRow: View {
+    let contact: Contact
+    let isOnApp: Bool
+    
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading) {
+                Text(contact.displayName)
+                    .font(.body)
+                
+                if let phone = contact.phoneNumber {
+                    Text(phone)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            Spacer()
+            
+            if isOnApp {
+                Button("Add Friend") {
+                    // Add friend action
+                }
+                .font(.caption)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+                .background(Color.orange)
+                .foregroundColor(.white)
+                .cornerRadius(12)
+            } else {
+                Button("Invite") {
+                    // Invite action
+                }
+                .font(.caption)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+                .background(Color.blue)
+                .foregroundColor(.white)
+                .cornerRadius(12)
+            }
+        }
+    }
+}
+
+struct MessageComposerView: UIViewControllerRepresentable {
+    let contact: Contact
+    let completion: (Bool) -> Void
+    
+    func makeUIViewController(context: Context) -> MFMessageComposeViewController {
+        let composer = MFMessageComposeViewController()
+        composer.messageComposeDelegate = context.coordinator
+        
+        if let phoneNumber = contact.phoneNumber {
+            composer.recipients = [phoneNumber]
+        }
+        
+        composer.body = "Hey! I'm using Tava to discover and share amazing meals. Join me on the app! Download it here: https://apps.apple.com/app/tava"
+        
+        return composer
+    }
+    
+    func updateUIViewController(_ uiViewController: MFMessageComposeViewController, context: Context) {}
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(completion: completion)
+    }
+    
+    class Coordinator: NSObject, MFMessageComposeViewControllerDelegate {
+        let completion: (Bool) -> Void
+        
+        init(completion: @escaping (Bool) -> Void) {
+            self.completion = completion
+        }
+        
+        func messageComposeViewController(_ controller: MFMessageComposeViewController, didFinishWith result: MessageComposeResult) {
+            controller.dismiss(animated: true) {
+                self.completion(result == .sent)
+            }
+        }
+    }
+}
+
+struct LoadingView: View {
+    var body: some View {
+        VStack(spacing: 16) {
+            ProgressView()
+                .scaleEffect(1.2)
+            
+            Text("Loading contacts...")
+                .font(.body)
+                .foregroundColor(.secondary)
+        }
+        .padding(.vertical, 40)
+    }
+}
+
+struct PrimaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline)
+            .fontWeight(.semibold)
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background(Color.orange)
+            .cornerRadius(12)
+            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
     }
 }
 

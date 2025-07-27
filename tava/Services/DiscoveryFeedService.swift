@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import CoreLocation
+import Supabase
 
 // MARK: - Discovery Models
 
@@ -338,7 +339,7 @@ class HybridDiscoveryFeedService: ObservableObject {
         }
         
         do {
-            try await callEdgeFunction(
+            _ = try await callEdgeFunction(
                 "user-actions",
                 parameters: [
                     "action": wasFollowing ? "unfollow" : "follow",
@@ -371,7 +372,7 @@ class HybridDiscoveryFeedService: ObservableObject {
         updateMealEngagement(mealId: meal.id, likesCount: newLikesCount)
         
         do {
-            try await callEdgeFunction(
+            _ = try await callEdgeFunction(
                 "user-actions",
                 parameters: [
                     "action": "toggle_like",
@@ -387,7 +388,7 @@ class HybridDiscoveryFeedService: ObservableObject {
     
     func toggleBookmark(for meal: DiscoveryMeal) async {
         do {
-            try await callEdgeFunction(
+            _ = try await callEdgeFunction(
                 "user-actions",
                 parameters: [
                     "action": "toggle_bookmark",
@@ -413,6 +414,9 @@ class HybridDiscoveryFeedService: ObservableObject {
             await loadPopularRestaurants(refresh: true)
         case .meals, .trending:
             await loadTrendingMeals(refresh: true)
+        case .contacts:
+            // Contacts are handled by ContactService, not DiscoveryFeedService
+            break
         }
         
         isRefreshing = false
@@ -428,6 +432,9 @@ class HybridDiscoveryFeedService: ObservableObject {
             await loadPopularRestaurants(loadMore: true)
         case .meals, .trending:
             await loadTrendingMeals(loadMore: true)
+        case .contacts:
+            // Contacts don't have pagination, handled by ContactService
+            break
         }
     }
     
@@ -470,225 +477,15 @@ class HybridDiscoveryFeedService: ObservableObject {
         }
     }
     
-    private func callEdgeFunction(_ functionName: String, parameters: [String: Any]) async throws -> Data {
-        // Mock implementation - replace with actual Supabase call
-        try await Task.sleep(nanoseconds: UInt64.random(in: 500_000_000...2_000_000_000))
-        
-        // In real implementation:
-        // let response = try await supabase.functions.invoke(functionName, parameters: parameters)
-        // return response.data
-        
-        return try generateMockResponse(for: functionName, parameters: parameters)
+    private func callEdgeFunction(_ functionName: String, parameters: [String: Any] = [:]) async throws -> Data {
+        let bodyData = try JSONSerialization.data(withJSONObject: parameters)
+        let data: Data = try await supabase.client.functions.invoke(
+            functionName,
+            options: FunctionInvokeOptions(body: bodyData)
+        )
+        return data
     }
     
-    private func generateMockResponse(for functionName: String, parameters: [String: Any]) throws -> Data {
-        switch functionName {
-        case "discovery-feed":
-            let response = MainFeedResponse(
-                items: generateMockFeedItems(count: 10),
-                hasMore: Bool.random(),
-                nextCursor: UUID().uuidString
-            )
-            return try JSONEncoder().encode(response)
-            
-        case "discovery-people":
-            let response = PeopleResponse(
-                people: generateMockPeople(count: 10),
-                hasMore: Bool.random(),
-                nextCursor: UUID().uuidString
-            )
-            return try JSONEncoder().encode(response)
-            
-        case "discovery-restaurants":
-            let response = RestaurantsResponse(
-                restaurants: generateMockRestaurants(count: 10),
-                hasMore: Bool.random(),
-                nextCursor: UUID().uuidString
-            )
-            return try JSONEncoder().encode(response)
-            
-        case "discovery-meals":
-            let response = MealsResponse(
-                meals: generateMockMeals(count: 10),
-                hasMore: Bool.random(),
-                nextCursor: UUID().uuidString
-            )
-            return try JSONEncoder().encode(response)
-            
-        case "discovery-search":
-            let response = SearchResponse(
-                items: generateMockFeedItems(count: 5),
-                totalCount: 50,
-                hasMore: true
-            )
-            return try JSONEncoder().encode(response)
-            
-        case "user-actions":
-            let response = ActionResponse(success: true, message: "Action completed")
-            return try JSONEncoder().encode(response)
-            
-        default:
-            throw NSError(domain: "MockError", code: 404, userInfo: [NSLocalizedDescriptionKey: "Function not found"])
-        }
-    }
-    
-    // MARK: - Mock Data Generators
-    
-    private func generateMockFeedItems(count: Int) -> [DiscoveryFeedItem] {
-        return (0..<count).map { index in
-            let type = DiscoveryItemType.allCases.randomElement() ?? .trendingMeal
-            let data = generateMockData(for: type, index: index)
-            
-            return DiscoveryFeedItem(
-                type: type,
-                data: data,
-                timestamp: Date().addingTimeInterval(-Double.random(in: 0...86400)),
-                priority: Int.random(in: 1...10)
-            )
-        }
-    }
-    
-    private func generateMockPeople(count: Int) -> [DiscoveryPerson] {
-        return (0..<count).map { index in
-            DiscoveryPerson(
-                id: UUID().uuidString,
-                username: "foodie\(index + 1)",
-                displayName: "Food Enthusiast \(index + 1)",
-                bio: generateRandomBio(),
-                avatarUrl: nil,
-                followersCount: Int.random(in: 50...500),
-                mutualFriendsCount: Int.random(in: 0...20),
-                isFollowing: Bool.random(),
-                recentMealsCount: Int.random(in: 5...50),
-                joinedAt: Date().addingTimeInterval(-Double.random(in: 0...31536000))
-            )
-        }
-    }
-    
-    private func generateMockRestaurants(count: Int) -> [DiscoveryRestaurant] {
-        let cuisines = ["Italian", "Mexican", "Japanese", "Chinese", "American", "Thai", "Indian", "French"]
-        
-        return (0..<count).map { index in
-            DiscoveryRestaurant(
-                id: UUID().uuidString,
-                name: "Restaurant \(index + 1)",
-                address: "\(100 + index) Main St",
-                city: "New York",
-                rating: Double.random(in: 3.5...5.0),
-                priceRange: Int.random(in: 1...4),
-                categories: cuisines.shuffled().prefix(2).map({$0}),
-                distance: Double.random(in: 0.1...5.0),
-                imageUrl: nil,
-                recentMealsCount: Int.random(in: 10...100),
-                averageMealRating: Double.random(in: 3.0...5.0)
-            )
-        }
-    }
-    
-    private func generateMockMeals(count: Int) -> [DiscoveryMeal] {
-        return (0..<count).map { index in
-            DiscoveryMeal(
-                id: UUID().uuidString,
-                title: "Amazing Meal \(index + 1)",
-                description: "This was absolutely delicious! Perfect combination of flavors.",
-                imageUrl: nil,
-                rating: Int.random(in: 3...5),
-                likesCount: Int.random(in: 10...500),
-                commentsCount: Int.random(in: 0...50),
-                tags: ["Italian", "Pasta", "Dinner"].shuffled().prefix(3).map({$0}),
-                createdAt: Date().addingTimeInterval(-Double.random(in: 0...604800)),
-                author: generateMockPeople(count: 1)[0],
-                restaurant: nil
-            )
-        }
-    }
-    
-    private func generateMockData(for type: DiscoveryItemType, index: Int) -> DiscoveryItemData {
-        switch type {
-        case .suggestedPerson:
-            return DiscoveryItemData(
-                userId: UUID().uuidString,
-                username: "user\(index)",
-                displayName: "User \(index)",
-                avatarUrl: nil,
-                bio: generateRandomBio(),
-                followersCount: Int.random(in: 50...500),
-                mutualFriendsCount: Int.random(in: 0...20),
-                isFollowing: false,
-                restaurantId: nil, restaurantName: nil, restaurantAddress: nil,
-                restaurantRating: nil, restaurantPriceRange: nil, restaurantDistance: nil,
-                restaurantImageUrl: nil, restaurantCategories: nil,
-                mealId: nil, mealTitle: nil, mealDescription: nil,
-                mealImageUrl: nil, mealRating: nil, mealLikesCount: nil,
-                mealCommentsCount: nil, mealTags: nil, mealCreatedAt: nil, mealAuthor: nil,
-                title: "User \(index)", subtitle: generateRandomBio(), imageUrl: nil, actionText: "Follow"
-            )
-            
-        case .popularRestaurant:
-            return DiscoveryItemData(
-                userId: nil, username: nil, displayName: nil, avatarUrl: nil, bio: nil,
-                followersCount: nil, mutualFriendsCount: nil, isFollowing: nil,
-                restaurantId: UUID().uuidString,
-                restaurantName: "Restaurant \(index)",
-                restaurantAddress: "\(100 + index) Main St",
-                restaurantRating: Double.random(in: 3.5...5.0),
-                restaurantPriceRange: Int.random(in: 1...4),
-                restaurantDistance: Double.random(in: 0.1...5.0),
-                restaurantImageUrl: nil,
-                restaurantCategories: ["Italian", "Casual Dining"],
-                mealId: nil, mealTitle: nil, mealDescription: nil,
-                mealImageUrl: nil, mealRating: nil, mealLikesCount: nil,
-                mealCommentsCount: nil, mealTags: nil, mealCreatedAt: nil, mealAuthor: nil,
-                title: "Restaurant \(index)", subtitle: "Italian • $$ • 4.5⭐", imageUrl: nil, actionText: nil
-            )
-            
-        case .trendingMeal, .featuredMeal:
-            return DiscoveryItemData(
-                userId: nil, username: nil, displayName: nil, avatarUrl: nil, bio: nil,
-                followersCount: nil, mutualFriendsCount: nil, isFollowing: nil,
-                restaurantId: nil, restaurantName: nil, restaurantAddress: nil,
-                restaurantRating: nil, restaurantPriceRange: nil, restaurantDistance: nil,
-                restaurantImageUrl: nil, restaurantCategories: nil,
-                mealId: UUID().uuidString,
-                mealTitle: "Amazing Meal \(index)",
-                mealDescription: "This was absolutely delicious!",
-                mealImageUrl: nil,
-                mealRating: Int.random(in: 3...5),
-                mealLikesCount: Int.random(in: 10...500),
-                mealCommentsCount: Int.random(in: 0...50),
-                mealTags: ["Italian", "Pasta"],
-                mealCreatedAt: Date(),
-                mealAuthor: "chef\(index)",
-                title: "Amazing Meal \(index)", subtitle: "\(Int.random(in: 10...500)) likes", imageUrl: nil, actionText: nil
-            )
-            
-        case .nearbyActivity:
-            return DiscoveryItemData(
-                userId: nil, username: nil, displayName: nil, avatarUrl: nil, bio: nil,
-                followersCount: nil, mutualFriendsCount: nil, isFollowing: nil,
-                restaurantId: nil, restaurantName: nil, restaurantAddress: nil,
-                restaurantRating: nil, restaurantPriceRange: nil, restaurantDistance: nil,
-                restaurantImageUrl: nil, restaurantCategories: nil,
-                mealId: nil, mealTitle: nil, mealDescription: nil,
-                mealImageUrl: nil, mealRating: nil, mealLikesCount: nil,
-                mealCommentsCount: nil, mealTags: nil, mealCreatedAt: nil, mealAuthor: nil,
-                title: "Nearby Activity \(index)", subtitle: "Check out what's happening around you", imageUrl: nil, actionText: "Explore"
-            )
-        }
-    }
-    
-    private func generateRandomBio() -> String {
-        let bios = [
-            "Food enthusiast and home chef",
-            "Always hunting for the best local eats",
-            "Pasta lover and wine connoisseur",
-            "Plant-based foodie exploring NYC",
-            "Professional chef sharing my favorites",
-            "Weekend warrior in the kitchen",
-            "Coffee addict and brunch expert"
-        ]
-        return bios.randomElement() ?? "Food lover"
-    }
 }
 
 // MARK: - Extensions

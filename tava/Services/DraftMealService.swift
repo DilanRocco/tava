@@ -29,7 +29,7 @@ class DraftMealService: ObservableObject {
     }
     
     private func saveImageLocally(_ imageData: Data) -> String? {
-        let fileName = "\(UUID().uuidString).jpg"
+        let fileName = "\(UUID().uuidString).webp"
         let filePath = documentsDirectory.appendingPathComponent("draft_photos").appendingPathComponent(fileName)
         
         // Create directory if it doesn't exist
@@ -411,7 +411,7 @@ class DraftMealService: ObservableObject {
             }
             
             // Upload to Supabase storage
-            let fileName = "\(mealId.uuidString)/\(UUID().uuidString).jpg"
+            let fileName = "\(mealId.uuidString)/\(UUID().uuidString).webp"
             let filePath = "meal-photos/\(fileName)"
             
             try await supabase.storage

@@ -44,6 +44,28 @@ CREATE TABLE public.comment_reactions (
   CONSTRAINT comment_reactions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id),
   CONSTRAINT comment_reactions_comment_id_fkey FOREIGN KEY (comment_id) REFERENCES public.meal_comments(id)
 );
+CREATE TABLE public.contact_invites (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  inviter_id uuid NOT NULL,
+  contact_name text NOT NULL,
+  contact_phone text,
+  contact_email text,
+  sent_at timestamp with time zone DEFAULT now(),
+  status text NOT NULL DEFAULT 'sent'::text CHECK (status = ANY (ARRAY['sent'::text, 'delivered'::text, 'opened'::text, 'joined'::text])),
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT contact_invites_pkey PRIMARY KEY (id),
+  CONSTRAINT contact_invites_inviter_id_fkey FOREIGN KEY (inviter_id) REFERENCES public.users(id)
+);
+CREATE TABLE public.contact_sync_events (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  event_type text NOT NULL CHECK (event_type = ANY (ARRAY['permission_granted'::text, 'contacts_synced'::text, 'invite_sent'::text, 'friend_added'::text])),
+  contact_count integer,
+  metadata jsonb,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT contact_sync_events_pkey PRIMARY KEY (id),
+  CONSTRAINT contact_sync_events_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
+);
 CREATE TABLE public.meal_comments (
   id uuid NOT NULL DEFAULT uuid_generate_v4(),
   meal_id uuid,
@@ -115,7 +137,6 @@ CREATE TABLE public.restaurants (
   postal_code character varying,
   country character varying,
   phone character varying,
-  location USER-DEFINED,
   rating numeric,
   price_range integer,
   categories jsonb,
@@ -124,6 +145,8 @@ CREATE TABLE public.restaurants (
   image_url text,
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
+  longitude real,
+  latitude real,
   CONSTRAINT restaurants_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.spatial_ref_sys (
@@ -152,6 +175,8 @@ CREATE TABLE public.users (
   location_enabled boolean DEFAULT true,
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
+  phone text,
+  email text,
   CONSTRAINT users_pkey PRIMARY KEY (id),
   CONSTRAINT users_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id)
 );

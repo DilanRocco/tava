@@ -85,7 +85,7 @@ class ProfileService: ObservableObject {
         }
     }
     
-    func uploadAvatar(imageData: Data) async throws -> String {
+    func uploadAvatar(image: UIImage) async throws -> String {
         guard let currentUserId = supabase.currentUser?.id else {
             throw NSError(domain: "AuthError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
         }
@@ -94,15 +94,20 @@ class ProfileService: ObservableObject {
         defer { isLoading = false }
         
         do {
+            // Compress image to WebP
+            guard let compressedData = supabase.compressImage(image: image, quality: 0.8, maxDimension: 800) else {
+                throw NSError(domain: "ImageError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Failed to compress image"])
+            }
+            
             // Generate unique filename
-            let filename = "avatar_\(currentUserId.uuidString)_\(Int(Date().timeIntervalSince1970)).jpg"
+            let filename = "avatar_\(currentUserId.uuidString)_\(Int(Date().timeIntervalSince1970)).webp"
             let path = "avatars/\(filename)"
             
             // Upload to Supabase Storage
             try await supabase.client.storage
                 .from("user-content")
-                .upload(path, data: imageData, options: .init(
-                    contentType: "image/jpeg",
+                .upload(path, data: compressedData, options: .init(
+                    contentType: "image/webp",
                     upsert: true
                 ))
             

@@ -418,6 +418,8 @@ class MealService: ObservableObject {
                 displayName: userData.display_name,
                 bio: userData.bio,
                 avatarUrl: userData.avatar_url,
+                phone: nil,
+                email: nil,
                 locationEnabled: true,
                 createdAt: Date(),
                 updatedAt: Date()
@@ -840,6 +842,8 @@ func fetchMealsWithRestaurants(
             displayName: userData.display_name,
             bio: userData.bio,
             avatarUrl: userData.avatar_url,
+            phone: nil,
+            email: nil,
             locationEnabled: true,
             createdAt: Date(),
             updatedAt: Date()
@@ -991,6 +995,8 @@ func fetchMealsWithRestaurants(
                     displayName: userData.display_name,
                     bio: userData.bio,
                     avatarUrl: userData.avatar_url,
+                    phone: nil,
+                    email: nil,
                     locationEnabled: true,
                     createdAt: Date(),
                     updatedAt: Date()

@@ -93,11 +93,13 @@ struct MapFeedView: View {
                 MapFeedListView(meals: restaurantMeals)
             }
             .sheet(isPresented: $showProfile) {
-                ProfileView()
-                    .environmentObject(supabase)
-                    .environmentObject(locationService)
-                    .environmentObject(mealService)
-                    .environmentObject(googlePlacesService)
+                NavigationView {
+                    ProfileView()
+                        .environmentObject(supabase)
+                        .environmentObject(locationService)
+                        .environmentObject(mealService)
+                        .environmentObject(googlePlacesService)
+                }
             }
             .task {
                 await locationService.requestLocationPermission()
@@ -962,15 +964,27 @@ struct RestaurantMealsGridView: View {
                 
                 Spacer()
                 
-                // Restaurant image placeholder
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.gray.opacity(0.2))
-                    .frame(width: 80, height: 80)
-                    .overlay(
-                        Image(systemName: "fork.knife")
-                            .font(.title2)
-                            .foregroundColor(.gray)
-                    )
+                // Restaurant image
+                OptimizedRestaurantImage(
+                    imageUrl: restaurant.imageUrl,
+                    bucket: "restaurant-photos"
+                ) { image in
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 80, height: 80)
+                        .clipped()
+                } placeholder: {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.gray.opacity(0.2))
+                        .frame(width: 80, height: 80)
+                        .overlay(
+                            Image(systemName: "fork.knife")
+                                .font(.title2)
+                                .foregroundColor(.gray)
+                        )
+                }
+                .cornerRadius(12)
             }
             .padding(.horizontal)
             
@@ -1012,7 +1026,10 @@ struct MealGridItemView: View {
                 // Meal image or placeholder
                 ZStack {
                     if let photo = meal.primaryPhoto {
-                        AsyncImage(url: URL(string: photo.url)) { image in
+                        CachedAsyncImage(
+                            storagePath: photo.storagePath,
+                            bucket: "meal-photos"
+                        ) { image in
                             image
                                 .resizable()
                                 .aspectRatio(contentMode: .fill)
@@ -1137,6 +1154,7 @@ struct RestaurantFeedView: View {
                 commentsCount: 0, // You'll need to get this from comments
                 bookmarksCount: 0, // You'll need to get this from bookmarks
                 photoUrl: mealWithDetails.primaryPhoto?.url,
+                photoStoragePath: mealWithDetails.primaryPhoto?.storagePath,
                 userHasLiked: false, // You'll need to populate this from reactions
                 userHasBookmarked: false // You'll need to populate this
             )
@@ -1369,15 +1387,27 @@ struct RestaurantDetailView: View {
                 
                 Spacer()
                 
-                // Restaurant image placeholder
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.gray.opacity(0.2))
-                    .frame(width: 80, height: 80)
-                    .overlay(
-                        Image(systemName: "fork.knife")
-                            .font(.title2)
-                            .foregroundColor(.gray)
-                    )
+                // Restaurant image
+                OptimizedRestaurantImage(
+                    imageUrl: restaurantWithDetails.restaurant.imageUrl,
+                    bucket: "restaurant-photos"
+                ) { image in
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 80, height: 80)
+                        .clipped()
+                } placeholder: {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.gray.opacity(0.2))
+                        .frame(width: 80, height: 80)
+                        .overlay(
+                            Image(systemName: "fork.knife")
+                                .font(.title2)
+                                .foregroundColor(.gray)
+                        )
+                }
+                .cornerRadius(12)
             }
             
             HStack(spacing: 16) {
@@ -1630,15 +1660,26 @@ struct MealCard: View {
             }
             
             // Meal image if available
-            if meal.photos.first != nil {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.gray.opacity(0.1))
-                    .frame(height: 200)
-                    .overlay(
-                        Image(systemName: "photo")
-                            .font(.title)
-                            .foregroundColor(.gray)
-                    )
+            if let photo = meal.photos.first {
+                CachedAsyncImage(
+                    storagePath: photo.storagePath,
+                    bucket: "meal-photos"
+                ) { image in
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(height: 200)
+                        .clipped()
+                } placeholder: {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.gray.opacity(0.1))
+                        .frame(height: 200)
+                        .overlay(
+                            ProgressView()
+                                .tint(.orange)
+                        )
+                }
+                .cornerRadius(12)
             }
         }
         .padding()

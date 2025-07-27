@@ -64,6 +64,8 @@ class SupabaseClient: ObservableObject {
             displayName: displayName,
             bio: nil,
             avatarUrl: nil,
+            phone: nil,
+            email: email,
             locationEnabled: true,
             createdAt: Date(),
             updatedAt: Date()
@@ -110,7 +112,7 @@ class SupabaseClient: ObservableObject {
     // MARK: - Storage
     
     func uploadPhoto(image: UIImage, path: String) async throws -> String {
-        guard let imageData = image.jpegData(compressionQuality: 0.8) else {
+        guard let imageData = compressImageToWebP(image: image) else {
             throw NSError(domain: "ImageError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Failed to convert image to data"])
         }
         
@@ -146,5 +148,69 @@ class SupabaseClient: ObservableObject {
         try await client.storage
             .from("meal-photos")
             .remove(paths: [path])
+    }
+    
+    func getSignedURL(for storagePath: String, bucket: String = "meal-photos", expiresIn: Int = 3600) async throws -> URL {
+        return try await client.storage
+            .from(bucket)
+            .createSignedURL(path: storagePath, expiresIn: expiresIn)
+    }
+    
+    func getSignedURLString(for storagePath: String, bucket: String = "meal-photos", expiresIn: Int = 3600) async throws -> String {
+        let url = try await getSignedURL(for: storagePath, bucket: bucket, expiresIn: expiresIn)
+        return url.absoluteString
+    }
+    
+    // MARK: - Image Compression
+    
+    func compressImage(image: UIImage, quality: Float = 0.7, maxDimension: CGFloat = 1920) -> Data? {
+        return compressImageToWebP(image: image, quality: quality, maxDimension: maxDimension)
+    }
+    
+    private func compressImageToWebP(image: UIImage, quality: Float = 0.7, maxDimension: CGFloat = 1920) -> Data? {
+        // Resize image if needed
+        let resizedImage = resizeImage(image: image, maxDimension: maxDimension)
+        
+        // Convert to WebP
+        guard let cgImage = resizedImage.cgImage else { return nil }
+        
+        let mutableData = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(mutableData, "public.webp" as CFString, 1, nil) else {
+            // Fallback to JPEG if WebP fails
+            return resizedImage.jpegData(compressionQuality: CGFloat(quality))
+        }
+        
+        let options: [CFString: Any] = [
+            kCGImageDestinationLossyCompressionQuality: quality
+        ]
+        
+        CGImageDestinationAddImage(destination, cgImage, options as CFDictionary)
+        
+        if CGImageDestinationFinalize(destination) {
+            return mutableData as Data
+        } else {
+            // Fallback to JPEG if WebP conversion fails
+            return resizedImage.jpegData(compressionQuality: CGFloat(quality))
+        }
+    }
+    
+    private func resizeImage(image: UIImage, maxDimension: CGFloat) -> UIImage {
+        let size = image.size
+        
+        // Check if resizing is needed
+        if max(size.width, size.height) <= maxDimension {
+            return image
+        }
+        
+        // Calculate new size maintaining aspect ratio
+        let ratio = maxDimension / max(size.width, size.height)
+        let newSize = CGSize(width: size.width * ratio, height: size.height * ratio)
+        
+        // Resize the image
+        UIGraphicsBeginImageContextWithOptions(newSize, false, 0.0)
+        defer { UIGraphicsEndImageContext() }
+        
+        image.draw(in: CGRect(origin: .zero, size: newSize))
+        return UIGraphicsGetImageFromCurrentImageContext() ?? image
     }
 } 

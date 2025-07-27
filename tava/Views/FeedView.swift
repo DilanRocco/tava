@@ -81,13 +81,23 @@ struct FeedView: View {
         .preferredColorScheme(.dark)
         .task {
             await mealService.fetchFeedData()
+            
+            // Preload next batch of images for smooth scrolling
+            let storagePaths = mealService.feedMeals.compactMap { meal in
+                meal.photoStoragePath
+            }.filter { !$0.isEmpty }
+            
+            if !storagePaths.isEmpty {
+                ImageCacheManager.preloadImages(storagePaths)
+            }
         }
         .sheet(isPresented: $showingProfile) {
-            ProfileView()
-                .environmentObject(supabase)
-                .environmentObject(locationService)
-                .environmentObject(mealService)
-                
+            NavigationView {
+                ProfileView()
+                    .environmentObject(supabase)
+                    .environmentObject(locationService)
+                    .environmentObject(mealService)
+            }
         }
         .sheet(item: $selectedMealId) { wrapped in
             CommentsView(mealId: wrapped.id)
@@ -135,8 +145,8 @@ struct FeedItemView: View {
         ZStack {
             // Background layer with consistent frame
             ZStack {
-                if let photoUrl = meal.photoUrl, !photoUrl.isEmpty {
-                    AsyncImage(url: URL(string: photoUrl)) { image in
+                if let photoStoragePath = meal.photoStoragePath, !photoStoragePath.isEmpty {
+                    CachedAsyncImage(storagePath: photoStoragePath) { image in
                         image
                             .resizable()
                             .aspectRatio(contentMode: .fill)
@@ -160,6 +170,9 @@ struct FeedItemView: View {
                                 ProgressView()
                                     .tint(.white)
                             )
+                    }
+                    .onAppear {
+                        print("🖼️ FeedView - Loading image storage path: \(photoStoragePath)")
                     }
                 } else {
                     // Fallback when no image - same dimensions

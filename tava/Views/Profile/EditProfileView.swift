@@ -282,11 +282,7 @@ struct EditProfileView: View {
         do {
             // Upload new avatar if selected
             if let avatarImage {
-                guard let imageData = avatarImage.jpegData(compressionQuality: 0.8) else {
-                    throw NSError(domain: "ImageError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to process image"])
-                }
-                
-                _ = try await profileService.uploadAvatar(imageData: imageData)
+                _ = try await profileService.uploadAvatar(image: avatarImage)
             }
             
             // Update profile information
